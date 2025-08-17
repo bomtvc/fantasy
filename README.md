@@ -10,6 +10,7 @@ Web application for analyzing Fantasy Premier League (FPL) League data using Str
 - **Top Picks**: Top 5 most picked players
 - **Rankings**: Weekly and monthly rankings with medals for top 3
 - **Awards Statistics**: Track weekly and monthly wins for each manager
+- **Chip History**: Track chip usage (Wildcard, Free Hit, Bench Boost, Triple Captain) for each manager by gameweek
 - **CSV Export**: Export data to CSV files
 - **Charts**: Interactive visualization with Plotly
 - **Caching**: Tối ưu hiệu năng với cache
@@ -92,6 +93,21 @@ Có nghĩa là:
 - Bảng xếp hạng theo tổng số giải thưởng
 - Biểu đồ phân tích: Stacked Bar, Pie Chart, Scatter Plot
 - Metrics tổng quan về giải thưởng
+
+### 🎯 Chip History
+- Lịch sử sử dụng chip của từng manager theo từng gameweek
+- Bảng hiển thị: Manager, Team, và các cột GW (không có cột Rank)
+- Hiển thị trực quan với icon từ file `statics/` và màu sắc cho từng loại chip:
+  - Wildcard (màu cam #ff9800) - icon từ `statics/wildcard.png`
+  - Free Hit (màu xanh dương #2196f3) - icon từ `statics/freehit.png`
+  - Bench Boost (màu xanh lá #4caf50) - icon từ `statics/bboost.png`
+  - Triple Captain (màu tím #9c27b0) - icon từ `statics/3xc.png`
+- Template hiển thị: icon ở trên, text ở dưới (theo thiết kế được cung cấp)
+- Icon được chuyển đổi thành base64 để embed trực tiếp vào HTML
+- Sắp xếp theo tên Manager (alphabetical order)
+- Thống kê tổng quan về việc sử dụng chip
+- Biểu đồ phân tích chip usage theo GW và loại chip
+- Hover effects và animation cho chip containers
 
 ## 🔧 API Endpoints sử dụng
 

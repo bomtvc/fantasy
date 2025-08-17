@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
+import base64
+import os
 from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import plotly.express as px
@@ -19,6 +21,21 @@ st.set_page_config(
 class FPLError(Exception):
     """Custom exception for FPL API errors"""
     pass
+
+def get_chip_icon_base64(icon_path: str) -> str:
+    """
+    Convert chip icon to base64 for embedding in HTML
+    """
+    try:
+        if os.path.exists(icon_path):
+            with open(icon_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+                return f"data:image/png;base64,{encoded_string}"
+        else:
+            # Return a default icon if file not found
+            return ""
+    except Exception:
+        return ""
 
 def show_temporary_message(message: str, message_type: str = "success"):
     """
@@ -88,6 +105,8 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                 css_class = "points-cell"
             elif 'Transfers' in col:
                 css_class = "transfers-cell"
+            elif table_type == "chip" and col.startswith('GW'):
+                css_class = "chip-cell"
 
             # Format value and create hyperlink for GW Points
             if pd.isna(value):
@@ -108,7 +127,72 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                     else:
                         display_value = formatted_value
             else:
-                display_value = str(value)
+                # Handle chip display with icons and colors
+                if table_type == "chip" and col.startswith('GW') and str(value) != '-':
+                    chip_name = str(value)
+                    chip_configs = {
+                        'wildcard': {
+                            'icon': 'statics/wildcard.png',
+                            'text': 'Wildcard',
+                            'color': '#ff9800'
+                        },
+                        'freehit': {
+                            'icon': 'statics/freehit.png',
+                            'text': 'Free Hit',
+                            'color': '#2196f3'
+                        },
+                        'bboost': {
+                            'icon': 'statics/bboost.png',
+                            'text': 'Bench Boost',
+                            'color': '#4caf50'
+                        },
+                        'triple_captain': {
+                            'icon': 'statics/3xc.png',
+                            'text': 'Triple Captain',
+                            'color': '#9c27b0'
+                        },
+                        '3xc': {
+                            'icon': 'statics/3xc.png',
+                            'text': 'Triple Captain',
+                            'color': '#9c27b0'
+                        }
+                    }
+
+                    chip_config = chip_configs.get(chip_name.lower())
+                    if chip_config:
+                        icon_base64 = get_chip_icon_base64(chip_config['icon'])
+                        if icon_base64:
+                            display_value = f'''
+                            <div class="chip-container" style="
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                padding: 8px 4px;
+                                border-radius: 8px;
+                                background-color: {chip_config['color']};
+                                color: white;
+                                min-width: 60px;
+                                font-size: 10px;
+                                font-weight: bold;
+                                text-align: center;
+                                line-height: 1.2;
+                            ">
+                                <img src="{icon_base64}" alt="{chip_config['text']}" style="
+                                    width: 24px;
+                                    height: 24px;
+                                    margin-bottom: 4px;
+                                    filter: brightness(0) invert(1);
+                                ">
+                                <span>{chip_config['text']}</span>
+                            </div>
+                            '''
+                        else:
+                            # Fallback to text only if icon not found
+                            display_value = f'<span style="padding: 4px 8px; border-radius: 8px; background-color: {chip_config["color"]}; color: white; font-size: 11px; font-weight: bold;">{chip_config["text"]}</span>'
+                    else:
+                        display_value = f'<span style="padding: 4px 8px; border-radius: 8px; background-color: #607d8b; color: white; font-size: 11px; font-weight: bold;">🎲 {chip_name.upper()}</span>'
+                else:
+                    display_value = str(value)
 
             html += f'<td class="{css_class}">{display_value}</td>'
         html += '</tr>'
@@ -284,6 +368,73 @@ def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
     except Exception as e:
         show_temporary_message(f"Unable to fetch data for entry {entry_id}, GW {gw}: {str(e)}", "warning")
         return None
+
+def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
+    """
+    Build chip history table for all entries showing which chips were used in each GW
+    """
+    if max_entries:
+        entries_df = entries_df.head(max_entries)
+
+    results = []
+    total_requests = len(entries_df) * len(gw_range)
+
+    # Progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
+        # Submit all tasks
+        future_to_info = {}
+        for _, entry in entries_df.iterrows():
+            for gw in gw_range:
+                future = executor.submit(get_entry_gw_picks, entry['Team_ID'], gw)
+                future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'], gw)
+
+        # Collect results
+        completed = 0
+        for future in as_completed(future_to_info):
+            team_id, manager, team, gw = future_to_info[future]
+            completed += 1
+
+            # Update progress
+            progress = completed / total_requests
+            progress_bar.progress(progress)
+            status_text.text(f"Fetching chip data: {completed}/{total_requests} ({progress:.1%})")
+
+            try:
+                data = future.result()
+                active_chip = None
+                if data:
+                    active_chip = data.get('active_chip')
+
+                results.append({
+                    'Team_ID': team_id,
+                    'Manager': manager,
+                    'Team': team,
+                    'GW': gw,
+                    'Active_Chip': active_chip if active_chip else '-'
+                })
+            except Exception as e:
+                show_temporary_message(f"Error processing entry {team_id}, GW {gw}: {str(e)}", "warning")
+                results.append({
+                    'Team_ID': team_id,
+                    'Manager': manager,
+                    'Team': team,
+                    'GW': gw,
+                    'Active_Chip': '-'
+                })
+
+            # Small delay to avoid rate limit
+            time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
+
+    progress_bar.empty()
+    status_text.empty()
+
+    if not results:
+        raise FPLError("Unable to fetch chip data for any entry")
+
+    return pd.DataFrame(results)
 
 def parse_month_mapping(mapping_str: str) -> Dict[int, int]:
     """
@@ -1096,6 +1247,30 @@ def main():
             font-size: 12px;
         }
 
+        /* Chip columns */
+        .chip-cell {
+            text-align: center;
+            font-weight: 500;
+            font-size: 12px;
+            padding: 4px !important;
+            vertical-align: middle;
+        }
+
+        /* Chip container styling */
+        .chip-container {
+            margin: 0 auto;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .chip-container:hover {
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .chip-container img {
+            transition: filter 0.2s ease;
+        }
+
         /* Container for table */
         .table-container {
             overflow-x: auto;
@@ -1129,13 +1304,14 @@ def main():
         """, unsafe_allow_html=True)
 
         # Tabs
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "👥 League Members",
             "📊 GW Points",
             "📅 Month Points",
             "⭐ Top Picks",
             "🏆 Rankings",
-            "🏅 Awards Statistics"
+            "🏅 Awards Statistics",
+            "🎯 Chip History"
         ])
 
         with tab1:
@@ -1993,6 +2169,134 @@ def main():
                     st.error(f"Error calculating awards statistics: {str(e)}")
             else:
                 st.info("GW Points data is loading...")
+
+        with tab7:
+            st.subheader("Chip Usage History")
+
+            # Auto-load Chip History data if not already loaded or if data was refreshed
+            should_load_chip_data = ('chip_history_df' not in st.session_state) or refresh_data
+
+            if should_load_chip_data:
+                try:
+                    with st.spinner("Loading chip usage data..."):
+                        chip_history_df = build_chip_history_table(entries_df, gw_range, max_entries)
+
+                    # Create pivot table for display
+                    chip_pivot = chip_history_df.pivot_table(
+                        index=['Manager', 'Team'],
+                        columns='GW',
+                        values='Active_Chip',
+                        fill_value='-',
+                        aggfunc='first'
+                    )
+
+                    # Rename columns to GW1, GW2, etc.
+                    chip_pivot.columns = [f'GW{col}' for col in chip_pivot.columns]
+
+                    # Reset index to get Manager and Team as columns
+                    chip_pivot = chip_pivot.reset_index()
+
+                    # Sort by Manager name alphabetically
+                    chip_pivot = chip_pivot.sort_values('Manager')
+
+                    # Reorder columns to have Manager, Team first (without Rank)
+                    gw_cols = ['Manager', 'Team'] + [f'GW{gw}' for gw in sorted(gw_range)]
+                    chip_pivot = chip_pivot[gw_cols]
+
+                    st.session_state.chip_history_df = chip_history_df
+                    st.session_state.chip_display_df = chip_pivot
+
+                except Exception as e:
+                    st.error(f"Error loading chip data: {str(e)}")
+
+            if 'chip_display_df' in st.session_state:
+                display_df = st.session_state.chip_display_df.copy()
+
+                # Create team_id_mapping for potential future use
+                team_id_mapping = {}
+                if 'entries_df' in st.session_state:
+                    entries_df = st.session_state.entries_df
+                    team_id_mapping = dict(zip(entries_df['Manager'], entries_df['Team_ID']))
+
+                # Render custom table
+                table_html = render_custom_table(display_df, "chip", team_id_mapping)
+                st.markdown(table_html, unsafe_allow_html=True)
+
+                # Download button
+                filename = f"fpl_{league_id}_chip_history.csv"
+                flat_df = st.session_state.chip_history_df
+                create_download_button(flat_df, filename, "📥 Download CSV", key="download_chip")
+
+                # Add chip usage statistics
+                st.markdown("---")
+                st.subheader("📊 Chip Usage Statistics")
+
+                try:
+                    chip_data = st.session_state.chip_history_df
+
+                    # Filter out entries with no chips used
+                    chip_data_used = chip_data[chip_data['Active_Chip'] != '-']
+
+                    if not chip_data_used.empty:
+                        # Count chip usage by type
+                        chip_counts = chip_data_used['Active_Chip'].value_counts()
+
+                        # Display chip usage summary
+                        st.markdown("#### 🎯 Chip Usage Summary")
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            # Chip usage bar chart
+                            fig = px.bar(
+                                x=chip_counts.index,
+                                y=chip_counts.values,
+                                title="Chip Usage Count",
+                                labels={'x': 'Chip Type', 'y': 'Times Used'}
+                            )
+                            fig.update_layout(height=400)
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        with col2:
+                            # Chip usage by GW
+                            gw_chip_usage = chip_data_used.groupby('GW')['Active_Chip'].count()
+                            fig2 = px.line(
+                                x=gw_chip_usage.index,
+                                y=gw_chip_usage.values,
+                                title="Chip Usage by Gameweek",
+                                labels={'x': 'Gameweek', 'y': 'Number of Chips Used'},
+                                markers=True
+                            )
+                            fig2.update_layout(height=400)
+                            st.plotly_chart(fig2, use_container_width=True)
+
+                        # Summary metrics
+                        st.markdown("#### 📈 Summary Metrics")
+                        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+
+                        with metric_col1:
+                            total_chips_used = len(chip_data_used)
+                            st.metric("Total Chips Used", total_chips_used)
+
+                        with metric_col2:
+                            unique_chip_types = len(chip_counts)
+                            st.metric("Different Chip Types", unique_chip_types)
+
+                        with metric_col3:
+                            managers_used_chips = chip_data_used['Manager'].nunique()
+                            st.metric("Managers Used Chips", managers_used_chips)
+
+                        with metric_col4:
+                            if len(chip_counts) > 0:
+                                most_popular_chip = chip_counts.index[0]
+                                st.metric("Most Popular Chip", most_popular_chip)
+                    else:
+                        st.info("No chips have been used yet this season.")
+
+                except Exception as e:
+                    st.error(f"Error creating chip statistics: {str(e)}")
+            else:
+                st.info("Chip data is loading...")
 
     else:
         st.info("👆 Please configure settings in the sidebar")
