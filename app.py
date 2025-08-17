@@ -20,6 +20,22 @@ class FPLError(Exception):
     """Custom exception for FPL API errors"""
     pass
 
+def show_temporary_message(message: str, message_type: str = "success"):
+    """
+    Show a temporary message - simplified version that just shows the message
+    For Streamlit, we'll rely on the natural flow to clear messages
+    """
+    if message_type == "success":
+        st.success(message)
+    elif message_type == "warning":
+        # Only show critical warnings, suppress routine ones
+        if "404 Client Error" not in message and "Unable to fetch data for entry" not in message:
+            st.warning(message)
+    elif message_type == "error":
+        st.error(message)
+    elif message_type == "info":
+        st.info(message)
+
 @st.cache_data(ttl=config.API_CACHE_TTL)
 def fetch_json(url: str, timeout: int = config.REQUEST_TIMEOUT, max_retries: int = config.MAX_RETRIES) -> Dict:
     """
@@ -97,6 +113,60 @@ def get_league_entries(league_id: int, phase: int, pages: List[int]) -> pd.DataF
 
     return pd.DataFrame(all_entries)
 
+@st.cache_data(ttl=config.API_CACHE_TTL)
+def get_all_league_entries(league_id: int, phase: int) -> pd.DataFrame:
+    """
+    Get all entries in league by automatically discovering all pages
+    """
+    all_entries = []
+    page = 1
+    max_pages = 100  # Safety limit to prevent infinite loop
+
+    while page <= max_pages:
+        try:
+            url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/?page_standings={page}&phase={phase}"
+            data = fetch_json(url)
+
+            if 'standings' not in data or 'results' not in data['standings']:
+                # No more data available
+                break
+
+            results = data['standings']['results']
+            if not results:
+                # Empty page, no more data
+                break
+
+            for entry in results:
+                all_entries.append({
+                    'Team_ID': entry['entry'],
+                    'Manager': entry['player_name'],
+                    'Team': entry['entry_name'],
+                    'Rank': entry.get('rank', 0),
+                    'Total': entry.get('total', 0)
+                })
+
+            # Check if this is the last page
+            has_next = data['standings'].get('has_next', False)
+            if not has_next:
+                break
+
+            page += 1
+            time.sleep(config.REQUEST_DELAY)  # Delay to avoid rate limit
+
+        except Exception as e:
+            show_temporary_message(f"Error fetching page {page}: {str(e)}", "warning")
+            # Try next page in case of temporary error
+            page += 1
+            continue
+
+    if not all_entries:
+        raise FPLError("Unable to fetch any entries data")
+
+    # Create temporary message that will be cleared by subsequent operations
+    status_placeholder = st.empty()
+    status_placeholder.success(f"Loaded {len(all_entries)} entries from {page-1} pages")
+    return pd.DataFrame(all_entries)
+
 def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
     """
     Get picks and entry history for a specific entry and GW
@@ -119,7 +189,7 @@ def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
 
         return data
     except Exception as e:
-        st.warning(f"Unable to fetch data for entry {entry_id}, GW {gw}: {str(e)}")
+        show_temporary_message(f"Unable to fetch data for entry {entry_id}, GW {gw}: {str(e)}", "warning")
         return None
 
 def parse_month_mapping(mapping_str: str) -> Dict[int, int]:
@@ -205,7 +275,7 @@ def build_gw_points_table(entries_df: pd.DataFrame, gw_range: List[int], max_ent
                         'picks': []
                     })
             except Exception as e:
-                st.warning(f"Error processing entry {team_id}, GW {gw}: {str(e)}")
+                show_temporary_message(f"Error processing entry {team_id}, GW {gw}: {str(e)}", "warning")
                 continue
 
             # Small delay to avoid rate limit
@@ -397,6 +467,55 @@ def get_current_month(gw: int, month_mapping: Dict[int, int]) -> int:
     Get current month based on current GW and month mapping
     """
     return month_mapping.get(gw, 1)
+
+@st.cache_data(ttl=config.API_CACHE_TTL)
+def get_current_gameweek_range(entries_df: pd.DataFrame) -> List[int]:
+    """
+    Automatically determine the current gameweek range by checking which weeks have actual points
+    Returns range from GW1 to the last week where at least one player has points > 0
+    """
+    if entries_df.empty:
+        return [1]
+
+    max_gw_to_check = 38  # Maximum possible gameweeks in a season
+    current_gw_end = 1
+
+    # Sample a few entries to check for actual gameweek data
+    sample_entries = entries_df.head(min(5, len(entries_df)))
+
+    with st.spinner("Determining current gameweek range..."):
+        for gw in range(1, max_gw_to_check + 1):
+            has_points = False
+
+            # Check if any of the sample entries have points > 0 for this GW
+            for _, entry in sample_entries.iterrows():
+                try:
+                    data = get_entry_gw_picks(entry['Team_ID'], gw)
+                    if data and 'entry_history' in data:
+                        points = data['entry_history'].get('points', 0)
+                        if points > 0:
+                            has_points = True
+                            break
+                except:
+                    continue
+
+            if has_points:
+                current_gw_end = gw
+            else:
+                # If no points found for this GW, we've likely reached the current week
+                # Check one more GW to be sure
+                if gw > current_gw_end:
+                    break
+
+            # Small delay to avoid rate limiting
+            time.sleep(config.REQUEST_DELAY / 2)
+
+    gw_range = list(range(1, current_gw_end + 1))
+    # Create temporary message that will be cleared by subsequent operations
+    status_placeholder = st.empty()
+    status_placeholder.success(f"Auto-detected gameweek range: GW1 to GW{current_gw_end}")
+
+    return gw_range
 
 def create_ranking_table(data_df: pd.DataFrame, score_column: str, has_transfers: bool = False) -> pd.DataFrame:
     """
@@ -674,43 +793,18 @@ def main():
         help="League phase (usually 1)"
     )
 
-    # Page settings
-    st.sidebar.subheader("📄 Pagination Settings")
-    page_start = st.sidebar.number_input("Start Page", value=1, min_value=1)
-    page_end = st.sidebar.number_input("End Page", value=1, min_value=1)
-    pages = list(range(page_start, page_end + 1))
+    # Pagination is now automatic - no manual settings needed
 
-    # GW range
-    st.sidebar.subheader("🗓️ Gameweek Range")
-    gw_start = st.sidebar.number_input("Start GW", value=1, min_value=1, max_value=38)
-    gw_end = st.sidebar.number_input("End GW", value=5, min_value=1, max_value=38)
+    # Gameweek range is now automatic - no manual settings needed
 
-    if gw_start > gw_end:
-        st.sidebar.error("Start GW must be <= End GW")
-        return
+    # Month mapping is now automatic from config - no manual settings needed
+    month_mapping_str = config.DEFAULT_MONTH_MAPPING
 
-    gw_range = list(range(gw_start, gw_end + 1))
+    # Performance settings (hidden from UI but set to default)
+    max_entries = None  # No limit by default
 
-    # Month mapping
-    st.sidebar.subheader("📅 Month Mapping")
-    month_mapping_str = st.sidebar.text_area(
-        "Mapping GW → Month",
-        value=config.DEFAULT_MONTH_MAPPING,
-        help="Example: 1-4,5-9,10-13 (GW1-4 = Month1, GW5-9 = Month2, ...)"
-    )
-
-    # Performance settings
-    st.sidebar.subheader("⚡ Performance")
-    max_entries = st.sidebar.number_input(
-        "Limit entries (0 = no limit)",
-        value=0,
-        min_value=0,
-        help="Limit number of entries for quick testing"
-    )
-    max_entries = max_entries if max_entries > 0 else None
-
-    # Load data button
-    if st.sidebar.button("🔄 Load Data", type="primary"):
+    # Auto-load data on page access
+    if 'entries_df' not in st.session_state:
         try:
             # Parse month mapping
             month_mapping = parse_month_mapping(month_mapping_str)
@@ -722,15 +816,16 @@ def main():
             with st.spinner("Loading player data..."):
                 bootstrap_df = get_bootstrap_static()
 
-            # Load league entries
+            # Load league entries (auto-discover all pages)
             with st.spinner("Loading entries list..."):
-                entries_df = get_league_entries(league_id, phase, pages)
+                entries_df = get_all_league_entries(league_id, phase)
 
             if entries_df.empty:
                 st.error("No entries found")
                 return
 
-            st.success(f"Loaded {len(entries_df)} entries")
+            # Auto-determine gameweek range
+            gw_range = get_current_gameweek_range(entries_df)
 
             # Store data in session state
             st.session_state.bootstrap_df = bootstrap_df
@@ -743,6 +838,11 @@ def main():
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
             return
+    else:
+        # Update session state with current settings if data already loaded
+        # GW range is auto-determined, so we keep the existing one
+        # Month mapping is from config, so we keep the existing one
+        st.session_state.max_entries = max_entries
 
     # Display data if loaded
     if 'entries_df' in st.session_state:
@@ -794,7 +894,8 @@ def main():
         with tab2:
             st.subheader("Points by Gameweek")
 
-            if st.button("🔄 Load GW Points Data", key="load_gw"):
+            # Auto-load GW Points data if not already loaded
+            if 'gw_points_df' not in st.session_state:
                 try:
                     with st.spinner("Loading gameweek points data..."):
                         gw_points_df = build_gw_points_table(entries_df, gw_range, max_entries)
@@ -1022,7 +1123,7 @@ def main():
                 except Exception as e:
                     st.error(f"Error calculating monthly points: {str(e)}")
             else:
-                st.info("Please load GW Points data first")
+                st.info("GW Points data is loading...")
 
         with tab4:
             st.subheader("Top 5 Most Picked Players")
@@ -1183,7 +1284,7 @@ def main():
                     except Exception as e:
                         st.error(f"Error creating weekly ranking: {str(e)}")
                 else:
-                    st.info("Please load GW Points data first")
+                    st.info("GW Points data is loading...")
 
             with col2:
                 st.markdown("### 📊 Monthly Rankings")
@@ -1248,7 +1349,7 @@ def main():
                     except Exception as e:
                         st.error(f"Error creating monthly ranking: {str(e)}")
                 else:
-                    st.info("Please load GW Points data first")
+                    st.info("GW Points data is loading...")
 
             # Overall statistics section
             if 'gw_points_df' in st.session_state:
@@ -1486,34 +1587,10 @@ def main():
                 except Exception as e:
                     st.error(f"Error calculating awards statistics: {str(e)}")
             else:
-                st.info("Please load GW Points data first to calculate awards statistics")
+                st.info("GW Points data is loading...")
 
     else:
-        st.info("👆 Please configure settings and click 'Load Data' to start")
-
-        # Display instructions
-        st.markdown("""
-        ### 📖 User Guide
-
-        1. **League Configuration**: Enter League ID and Phase (usually 1)
-        2. **Page Selection**: If league has many members, may need to load multiple pages
-        3. **GW Range Selection**: Choose gameweek range to analyze
-        4. **Month Mapping Configuration**: Define how to group GWs into months
-        5. **Click 'Load Data'** to start
-
-        ### 🔧 Features
-
-        - **League Members**: List of league members
-        - **GW Points**: Detailed points by gameweek
-        - **Month Points**: Points grouped by month with charts
-        - **Top Picks**: Top 5 most picked players
-
-        ### 💡 Tips
-
-        - Use "Limit entries" for quick testing with less data
-        - Data is cached for 5-10 minutes to improve speed
-        - Can download CSV for all data tables
-        """)
+        st.info("👆 Please configure settings in the sidebar")
 
 if __name__ == "__main__":
     main()
