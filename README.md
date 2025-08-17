@@ -7,7 +7,7 @@ Web application for analyzing Fantasy Premier League (FPL) League data using Str
 - **League Analysis**: Fetch data from FPL public APIs
 - **Points by Gameweek**: Display detailed points for each GW with interactive charts
 - **Points by Month**: Group GWs into months and calculate total points
-- **Top Picks**: Top 5 most picked players
+- **Top Picks**: Top N most picked players (user-configurable)
 - **Rankings**: Weekly and monthly rankings with medals for top 3
 - **Awards Statistics**: Track weekly and monthly wins for each manager
 - **Chip History**: Track chip usage (Wildcard, Free Hit, Bench Boost, Triple Captain) for each manager by gameweek
@@ -79,9 +79,10 @@ Có nghĩa là:
 - Tổng điểm theo tháng
 
 ### ⭐ Top Picks
-- Top 5 cầu thủ được pick nhiều nhất
+- Top N cầu thủ được pick nhiều nhất (N có thể chọn: 3, 5, 10, 15, 20, 25, 30)
 - Có thể chọn 1 GW cụ thể hoặc gom nhiều GW
 - Biểu đồ bar chart với phần trăm
+- Tùy chọn số lượng cầu thủ hiển thị linh hoạt
 
 ### 🏆 Rankings
 - Bảng xếp hạng theo tuần và theo tháng

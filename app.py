@@ -637,9 +637,9 @@ def build_month_points_table_full(gw_points_df: pd.DataFrame, month_mapping: Dic
     return result
 
 def compute_top_picks(entries_df: pd.DataFrame, gw_range: List[int], bootstrap_df: pd.DataFrame,
-                     max_entries: Optional[int] = None) -> pd.DataFrame:
+                     max_entries: Optional[int] = None, top_n: int = 5) -> pd.DataFrame:
     """
-    Calculate top 5 most picked players
+    Calculate top N most picked players
     """
     if max_entries:
         entries_df = entries_df.head(max_entries)
@@ -679,8 +679,8 @@ def compute_top_picks(entries_df: pd.DataFrame, gw_range: List[int], bootstrap_d
     # Calculate percentage
     result['percent_of_entries'] = (result['times_picked'] / (total_entries * len(gw_range))) * 100
 
-    # Sort and get top 5
-    result = result.sort_values('times_picked', ascending=False).head(5)
+    # Sort and get top N
+    result = result.sort_values('times_picked', ascending=False).head(top_n)
 
     # Format output
     result = result[['web_name', 'times_picked', 'percent_of_entries']].copy()
@@ -1720,10 +1720,10 @@ def main():
                 st.info("GW Points data is loading...")
 
         with tab4:
-            st.subheader("Top 5 Most Picked Players")
+            st.subheader("Top N Most Picked Players")
 
             # Options for top picks
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 single_gw = st.checkbox("Single GW only", value=False)
             with col2:
@@ -1732,6 +1732,13 @@ def main():
                     analysis_gw_range = [selected_gw]
                 else:
                     analysis_gw_range = gw_range
+            with col3:
+                top_n = st.selectbox(
+                    "Number of players",
+                    options=[3, 5, 10, 15, 20, 25, 30],
+                    index=1,  # Default to 5
+                    help="Select how many top players to display"
+                )
 
             if st.button("🔄 Calculate Top Picks", key="load_picks"):
                 try:
@@ -1740,7 +1747,8 @@ def main():
                             entries_df,
                             analysis_gw_range,
                             bootstrap_df,
-                            max_entries
+                            max_entries,
+                            top_n
                         )
 
                     st.session_state.top_picks_df = top_picks_df
@@ -1766,7 +1774,7 @@ def main():
                         top_picks_df,
                         x='Player',
                         y='Times_Picked',
-                        title='Top 5 Most Picked Players',
+                        title=f'Top {len(top_picks_df)} Most Picked Players',
                         text='Percent_Of_Entries'
                     )
 
