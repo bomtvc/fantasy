@@ -11,6 +11,7 @@ Web application for analyzing Fantasy Premier League (FPL) League data using Str
 - **Rankings**: Weekly and monthly rankings with medals for top 3
 - **Awards Statistics**: Track weekly and monthly wins for each manager
 - **Chip History**: Track chip usage (Wildcard, Free Hit, Bench Boost, Triple Captain) for each manager by gameweek
+- **Fun Stats**: Captain and bench statistics by gameweek
 - **CSV Export**: Export data to CSV files
 - **Charts**: Interactive visualization with Plotly
 - **Caching**: Tối ưu hiệu năng với cache
@@ -111,6 +112,16 @@ Có nghĩa là:
 - Biểu đồ phân tích chip usage theo GW và loại chip
 - Hover effects và animation cho chip containers
 
+### 🎉 Fun Stats
+- Weekly gameweek statistics table with interesting insights
+- **Best Captain**: Manager with highest scoring captain of the week
+- **Worst Captain**: Manager with lowest scoring captain of the week
+- **Best Bench**: Manager with highest total bench points (positions 12-15) of the week
+- Display manager name, player name and detailed scores
+- Overall statistics: Captain King, Bench Expert, statistics diversity
+- Uses API to fetch picks and player scores for each GW
+- Analyze and compare captain and bench performance between managers
+
 ## 🔧 API Endpoints sử dụng
 
 1. **League Standings**:
@@ -126,6 +137,16 @@ Có nghĩa là:
 3. **Bootstrap Static**:
    ```
    https://fantasy.premierleague.com/api/bootstrap-static/
+   ```
+
+4. **Player Element Summary** (cho Thống kê vui):
+   ```
+   https://fantasy.premierleague.com/api/element-summary/{element_id}/
+   ```
+
+5. **Entry GW Data** (cho Thống kê vui):
+   ```
+   https://fantasy.premierleague.com/entry/{team_id}/event/{gw_id}
    ```
 
 ## ⚡ Tối ưu hiệu năng

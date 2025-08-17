@@ -109,6 +109,13 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                 css_class = "transfers-cell"
             elif table_type == "chip" and col.startswith('GW'):
                 css_class = "chip-cell"
+            elif table_type == "fun_stats":
+                if col == 'GW':
+                    css_class = "gw-cell"
+                elif 'Captain' in col:
+                    css_class = "captain-cell"
+                elif 'Bench' in col:
+                    css_class = "bench-cell"
 
             # Format value and create hyperlink for GW Points
             if pd.isna(value):
@@ -210,7 +217,7 @@ def clear_all_cache():
     st.cache_data.clear()
 
     # Clear session state data
-    cache_keys = ['entries_df', 'bootstrap_df', 'gw_range', 'gw_points_df', 'gw_display_df', 'top_picks_df', 'data_loaded_at']
+    cache_keys = ['entries_df', 'bootstrap_df', 'gw_range', 'gw_points_df', 'gw_display_df', 'top_picks_df', 'fun_stats_df', 'data_loaded_at']
     for key in cache_keys:
         if key in st.session_state:
             del st.session_state[key]
@@ -371,6 +378,23 @@ def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
         show_temporary_message(f"Unable to fetch data for entry {entry_id}, GW {gw}: {str(e)}", "warning")
         return None
 
+def get_player_gw_points(element_id: int, gw: int) -> int:
+    """
+    Get player points for a specific gameweek from element-summary API
+    """
+    try:
+        url = f"https://fantasy.premierleague.com/api/element-summary/{element_id}/"
+        data = fetch_json(url)
+
+        # Find the specific gameweek in history
+        for event in data.get('history', []):
+            if event.get('round') == gw:
+                return event.get('total_points', 0)
+
+        return 0
+    except Exception as e:
+        return 0
+
 def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
     """
     Build chip history table for all entries showing which chips were used in each GW
@@ -435,6 +459,124 @@ def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_
 
     if not results:
         raise FPLError("Unable to fetch chip data for any entry")
+
+    return pd.DataFrame(results)
+
+def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstrap_df: pd.DataFrame,
+                         max_entries: Optional[int] = None) -> pd.DataFrame:
+    """
+    Build fun statistics table showing best/worst captains and best bench for each GW
+    """
+    if max_entries:
+        entries_df = entries_df.head(max_entries)
+
+    results = []
+
+    # Only process GWs that have finished (have results)
+    completed_gws = [gw for gw in gw_range if gw <= max(gw_range)]
+
+    total_requests = len(entries_df) * len(completed_gws)
+
+    # Progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    # Create player name mapping
+    player_mapping = dict(zip(bootstrap_df['id'], bootstrap_df['web_name']))
+
+    for gw in completed_gws:
+        status_text.text(f"Processing GW {gw}...")
+
+        gw_data = []
+        completed = 0
+
+        with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
+            # Submit all tasks for this GW
+            future_to_info = {}
+            for _, entry in entries_df.iterrows():
+                future = executor.submit(get_entry_gw_picks, entry['Team_ID'], gw)
+                future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'])
+
+            # Collect results for this GW
+            for future in as_completed(future_to_info):
+                team_id, manager, team = future_to_info[future]
+                completed += 1
+
+                # Update progress
+                progress = (completed + (gw - 1) * len(entries_df)) / total_requests
+                progress_bar.progress(progress)
+
+                try:
+                    data = future.result()
+                    if data and 'picks' in data:
+                        picks = data['picks']
+
+                        # Find captain
+                        captain_pick = next((p for p in picks if p.get('is_captain')), None)
+                        captain_element = captain_pick.get('element') if captain_pick else None
+                        captain_points = 0
+                        captain_name = "Unknown"
+
+                        if captain_element:
+                            captain_points = get_player_gw_points(captain_element, gw)
+                            captain_name = player_mapping.get(captain_element, f"Player_{captain_element}")
+                            # Captain points are doubled
+                            captain_points *= captain_pick.get('multiplier', 1)
+
+                        # Find bench players (positions 12, 13, 14, 15)
+                        bench_picks = [p for p in picks if p.get('position', 0) in [12, 13, 14, 15]]
+                        bench_total_points = 0
+
+                        for bench_pick in bench_picks:
+                            element_id = bench_pick.get('element')
+                            if element_id:
+                                player_points = get_player_gw_points(element_id, gw)
+                                bench_total_points += player_points
+
+                        gw_data.append({
+                            'team_id': team_id,
+                            'manager': manager,
+                            'team': team,
+                            'captain_element': captain_element,
+                            'captain_name': captain_name,
+                            'captain_points': captain_points,
+                            'bench_total_points': bench_total_points
+                        })
+
+                except Exception as e:
+                    # Add empty data for failed requests
+                    gw_data.append({
+                        'team_id': team_id,
+                        'manager': manager,
+                        'team': team,
+                        'captain_element': None,
+                        'captain_name': "Unknown",
+                        'captain_points': 0,
+                        'bench_total_points': 0
+                    })
+
+                # Small delay to avoid rate limit
+                time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
+
+        # Process GW results
+        if gw_data:
+            # Find best and worst captains
+            best_captain = max(gw_data, key=lambda x: x['captain_points'])
+            worst_captain = min(gw_data, key=lambda x: x['captain_points'])
+            best_bench = max(gw_data, key=lambda x: x['bench_total_points'])
+
+            results.append({
+                'GW': f"GW {gw}",
+                'Best_Captain': f"{best_captain['manager']} - {best_captain['captain_name']} ({best_captain['captain_points']})",
+                'Worst_Captain': f"{worst_captain['manager']} - {worst_captain['captain_name']} ({worst_captain['captain_points']})",
+                'Best_Bench': f"{best_bench['manager']} ({best_bench['bench_total_points']})"
+            })
+
+    progress_bar.empty()
+    status_text.empty()
+
+    if not results:
+        raise FPLError("Unable to fetch fun statistics data")
 
     return pd.DataFrame(results)
 
@@ -1304,18 +1446,49 @@ def main():
         .gw-points-link:visited {
             color: #7b1fa2;
         }
+
+        /* Fun Stats Table Styling */
+        .gw-cell {
+            background-color: #e8f5e8;
+            font-weight: bold;
+            text-align: center;
+            color: #2e7d32;
+        }
+
+        .captain-cell {
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .bench-cell {
+            background-color: #fff3e0;
+            font-weight: 500;
+            color: #ef6c00;
+        }
+
+        /* Fun stats specific styling */
+        .custom-table tbody tr td.captain-cell {
+            max-width: 200px;
+            word-wrap: break-word;
+        }
+
+        .custom-table tbody tr td.bench-cell {
+            text-align: center;
+            font-weight: bold;
+        }
         </style>
         """, unsafe_allow_html=True)
 
         # Tabs
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
             "👥 League Members",
             "📊 GW Points",
             "📅 Month Points",
             "⭐ Top Picks",
             "🏆 Rankings",
             "🏅 Awards Statistics",
-            "🎯 Chip History"
+            "🎯 Chip History",
+            "🎉 Fun Stats"
         ])
 
         with tab1:
@@ -2309,6 +2482,122 @@ def main():
                     st.error(f"Error creating chip statistics: {str(e)}")
             else:
                 st.info("Chip data is loading...")
+
+        with tab8:
+            st.subheader("Fun Statistics by Gameweek")
+
+            # Auto-load Fun Stats data if not already loaded or if data was refreshed
+            should_load_fun_stats = ('fun_stats_df' not in st.session_state) or refresh_data
+
+            if should_load_fun_stats:
+                try:
+                    with st.spinner("Loading fun statistics data..."):
+                        fun_stats_df = build_fun_stats_table(entries_df, gw_range, bootstrap_df, max_entries)
+
+                    st.session_state.fun_stats_df = fun_stats_df
+
+                except Exception as e:
+                    st.error(f"Error loading fun statistics: {str(e)}")
+
+            if 'fun_stats_df' in st.session_state:
+                display_df = st.session_state.fun_stats_df.copy()
+
+                # Create team_id_mapping for potential future use
+                team_id_mapping = {}
+                if 'entries_df' in st.session_state:
+                    entries_df = st.session_state.entries_df
+                    team_id_mapping = dict(zip(entries_df['Manager'], entries_df['Team_ID']))
+
+                # Render custom table
+                table_html = render_custom_table(display_df, "fun_stats", team_id_mapping)
+                st.markdown(table_html, unsafe_allow_html=True)
+
+                # Download button
+                filename = f"fpl_{league_id}_fun_stats.csv"
+                create_download_button(display_df, filename, "📥 Download CSV", key="download_fun_stats")
+
+                # Add some fun insights
+                st.markdown("---")
+                st.subheader("📊 Fun Insights")
+
+                try:
+                    fun_data = st.session_state.fun_stats_df
+
+                    if not fun_data.empty:
+                        # Extract manager names from the stats
+                        best_captains = []
+                        worst_captains = []
+                        best_benches = []
+
+                        for _, row in fun_data.iterrows():
+                            # Extract manager names
+                            best_cap = row['Best_Captain'].split(' - ')[0]
+                            worst_cap = row['Worst_Captain'].split(' - ')[0]
+                            best_bench = row['Best_Bench'].split(' (')[0]
+
+                            best_captains.append(best_cap)
+                            worst_captains.append(worst_cap)
+                            best_benches.append(best_bench)
+
+                        # Count occurrences
+                        from collections import Counter
+                        best_cap_counts = Counter(best_captains)
+                        worst_cap_counts = Counter(worst_captains)
+                        best_bench_counts = Counter(best_benches)
+
+                        # Display insights
+                        col1, col2, col3 = st.columns(3)
+
+                        with col1:
+                            st.markdown("#### 🏆 Captain King")
+                            if best_cap_counts:
+                                top_captain_manager = best_cap_counts.most_common(1)[0]
+                                st.metric("Best Captain Manager",
+                                         f"{top_captain_manager[0]}",
+                                         f"{top_captain_manager[1]} times")
+
+                        with col2:
+                            st.markdown("#### 😅 Captain... Unlucky")
+                            if worst_cap_counts:
+                                worst_captain_manager = worst_cap_counts.most_common(1)[0]
+                                st.metric("Worst Captain Manager",
+                                         f"{worst_captain_manager[0]}",
+                                         f"{worst_captain_manager[1]} times")
+
+                        with col3:
+                            st.markdown("#### 🔄 Bench Expert")
+                            if best_bench_counts:
+                                best_bench_manager = best_bench_counts.most_common(1)[0]
+                                st.metric("Best Bench Manager",
+                                         f"{best_bench_manager[0]}",
+                                         f"{best_bench_manager[1]} times")
+
+                        # Fun facts
+                        st.markdown("#### 🎯 Fun Facts")
+
+                        total_gws = len(fun_data)
+                        unique_best_captains = len(set(best_captains))
+                        unique_worst_captains = len(set(worst_captains))
+                        unique_best_benches = len(set(best_benches))
+
+                        fact_col1, fact_col2 = st.columns(2)
+
+                        with fact_col1:
+                            st.info(f"📈 {unique_best_captains}/{len(entries_df)} managers had best captain of the week")
+                            st.info(f"📉 {unique_worst_captains}/{len(entries_df)} managers had worst captain of the week")
+
+                        with fact_col2:
+                            st.info(f"🔄 {unique_best_benches}/{len(entries_df)} managers had best bench of the week")
+                            if total_gws > 0:
+                                diversity_score = (unique_best_captains + unique_worst_captains + unique_best_benches) / (3 * total_gws) * 100
+                                st.info(f"🎲 Statistics diversity: {diversity_score:.1f}%")
+                    else:
+                        st.info("No fun statistics data available yet.")
+
+                except Exception as e:
+                    st.error(f"Error creating fun insights: {str(e)}")
+            else:
+                st.info("Fun statistics data is loading...")
 
     else:
         st.info("👆 Please configure settings in the sidebar")
