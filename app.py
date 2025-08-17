@@ -36,6 +36,19 @@ def show_temporary_message(message: str, message_type: str = "success"):
     elif message_type == "info":
         st.info(message)
 
+def clear_all_cache():
+    """
+    Clear all cached data and session state
+    """
+    # Clear Streamlit cache
+    st.cache_data.clear()
+
+    # Clear session state data
+    cache_keys = ['entries_df', 'bootstrap_df', 'gw_range', 'gw_points_df', 'gw_display_df', 'top_picks_df', 'data_loaded_at']
+    for key in cache_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+
 @st.cache_data(ttl=config.API_CACHE_TTL)
 def fetch_json(url: str, timeout: int = config.REQUEST_TIMEOUT, max_retries: int = config.MAX_RETRIES) -> Dict:
     """
@@ -803,8 +816,31 @@ def main():
     # Performance settings (hidden from UI but set to default)
     max_entries = None  # No limit by default
 
-    # Auto-load data on page access
-    if 'entries_df' not in st.session_state:
+    # Data refresh control
+    st.sidebar.markdown("---")
+    # st.sidebar.subheader("🔄 Data Management")
+
+    # Show cache status
+    if 'data_loaded_at' in st.session_state:
+        load_time = time.time() - st.session_state.data_loaded_at
+        if load_time < 60:
+            time_str = f"{load_time:.0f} seconds ago"
+        elif load_time < 3600:
+            time_str = f"{load_time/60:.0f} minutes ago"
+        else:
+            time_str = f"{load_time/3600:.1f} hours ago"
+        st.sidebar.info(f"📊 Data loaded: {time_str}")
+
+    refresh_data = st.sidebar.button("🔄 Refresh Data", type="secondary", help="Reload all data from FPL API")
+
+    # Load data logic - auto-load first time or when refresh button is clicked
+    should_load_data = ('entries_df' not in st.session_state) or refresh_data
+
+    if should_load_data:
+        # Clear cache if refreshing
+        if refresh_data:
+            clear_all_cache()
+
         try:
             # Parse month mapping
             month_mapping = parse_month_mapping(month_mapping_str)
@@ -812,11 +848,11 @@ def main():
                 st.error("Invalid month mapping")
                 return
 
-            # Load bootstrap data
+            # Load bootstrap data (cached)
             with st.spinner("Loading player data..."):
                 bootstrap_df = get_bootstrap_static()
 
-            # Load league entries (auto-discover all pages)
+            # Load league entries (cached, auto-discover all pages)
             with st.spinner("Loading entries list..."):
                 entries_df = get_all_league_entries(league_id, phase)
 
@@ -824,7 +860,7 @@ def main():
                 st.error("No entries found")
                 return
 
-            # Auto-determine gameweek range
+            # Auto-determine gameweek range (cached)
             gw_range = get_current_gameweek_range(entries_df)
 
             # Store data in session state
@@ -834,6 +870,13 @@ def main():
             st.session_state.month_mapping = month_mapping
             st.session_state.max_entries = max_entries
             st.session_state.league_id = league_id
+            st.session_state.data_loaded_at = time.time()  # Track when data was loaded
+
+            if refresh_data:
+                show_temporary_message("Data refreshed successfully!", "success")
+            else:
+                # First time loading
+                show_temporary_message("Data loaded and cached for faster access!", "info")
 
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
@@ -894,8 +937,10 @@ def main():
         with tab2:
             st.subheader("Points by Gameweek")
 
-            # Auto-load GW Points data if not already loaded
-            if 'gw_points_df' not in st.session_state:
+            # Auto-load GW Points data if not already loaded or if data was refreshed
+            should_load_gw_data = ('gw_points_df' not in st.session_state) or refresh_data
+
+            if should_load_gw_data:
                 try:
                     with st.spinner("Loading gameweek points data..."):
                         gw_points_df = build_gw_points_table(entries_df, gw_range, max_entries)
@@ -1119,6 +1164,132 @@ def main():
                             )
 
                             st.plotly_chart(fig, use_container_width=True)
+
+                    # Add charts section
+                    st.markdown("---")
+                    st.subheader("📈 Month Points Analysis")
+
+                    # Chart options
+                    chart_col1, chart_col2 = st.columns(2)
+
+                    with chart_col1:
+                        chart_type = st.selectbox(
+                            "Chart Type",
+                            ["Line Chart", "Bar Chart", "Box Plot"],
+                            key="month_chart_type"
+                        )
+
+                    with chart_col2:
+                        # Get top managers for chart
+                        top_n = st.slider("Show Top N Managers", 5, 15, 10, key="month_top_n")
+
+                    # Prepare data for analysis
+                    if len(month_points_df) > 0:
+                        # Create month data for analysis (melt the dataframe)
+                        month_cols = [col for col in month_points_df.columns if col.startswith('Month_')]
+
+                        if month_cols:
+                            try:
+                                # Melt data for analysis
+                                month_analysis_data = month_points_df.melt(
+                                    id_vars=['Manager', 'Team'],
+                                    value_vars=month_cols,
+                                    var_name='Month',
+                                    value_name='Points'
+                                )
+
+                                # Calculate average points per manager
+                                avg_points = month_analysis_data.groupby('Manager')['Points'].mean().sort_values(ascending=False)
+                                top_managers = avg_points.head(top_n).index.tolist()
+
+                                # Filter data for top managers
+                                chart_data = month_analysis_data[month_analysis_data['Manager'].isin(top_managers)]
+
+                                if chart_type == "Line Chart":
+                                    # Line chart showing monthly points progression
+                                    fig = px.line(
+                                        chart_data,
+                                        x='Month',
+                                        y='Points',
+                                        color='Manager',
+                                        title=f'Monthly Points Progression - Top {top_n} Managers',
+                                        markers=True,
+                                        hover_data=['Team']
+                                    )
+
+                                    fig.update_layout(
+                                        xaxis_title="Month",
+                                        yaxis_title="Points",
+                                        legend_title="Manager",
+                                        height=500
+                                    )
+
+                                elif chart_type == "Bar Chart":
+                                    # Bar chart showing average points per month
+                                    avg_data = chart_data.groupby('Manager').agg({
+                                        'Points': 'mean',
+                                        'Team': 'first'
+                                    }).reset_index()
+                                    avg_data = avg_data.sort_values('Points', ascending=True)
+
+                                    fig = px.bar(
+                                        avg_data,
+                                        x='Points',
+                                        y='Manager',
+                                        orientation='h',
+                                        title=f'Average Points per Month - Top {top_n} Managers',
+                                        hover_data=['Team']
+                                    )
+
+                                    fig.update_layout(
+                                        xaxis_title="Average Points",
+                                        yaxis_title="Manager",
+                                        height=500
+                                    )
+
+                                else:  # Box Plot
+                                    # Box plot showing monthly points distribution
+                                    fig = px.box(
+                                        chart_data,
+                                        x='Manager',
+                                        y='Points',
+                                        title=f'Monthly Points Distribution - Top {top_n} Managers'
+                                    )
+
+                                    fig.update_layout(
+                                        xaxis_title="Manager",
+                                        yaxis_title="Points",
+                                        height=500
+                                    )
+
+                                    # Rotate x-axis labels for better readability
+                                    fig.update_xaxes(tickangle=45)
+
+                                st.plotly_chart(fig, use_container_width=True)
+
+                                # Summary statistics
+                                st.markdown("#### 📊 Summary Statistics")
+                                summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+
+                                with summary_col1:
+                                    # Calculate league average for monthly points
+                                    avg_all = month_analysis_data['Points'].mean()
+                                    st.metric("League Average", f"{avg_all:.1f}")
+
+                                with summary_col2:
+                                    highest_month = month_analysis_data['Points'].max()
+                                    st.metric("Highest Month Score", highest_month)
+
+                                with summary_col3:
+                                    lowest_month = month_analysis_data['Points'].min()
+                                    st.metric("Lowest Month Score", lowest_month)
+
+                                with summary_col4:
+                                    std_dev = month_analysis_data['Points'].std()
+                                    st.metric("Standard Deviation", f"{std_dev:.1f}")
+
+                            except Exception as e:
+                                st.error(f"Error creating month analysis charts: {str(e)}")
 
                 except Exception as e:
                     st.error(f"Error calculating monthly points: {str(e)}")
