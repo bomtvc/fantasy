@@ -14,6 +14,7 @@ Web application for analyzing Fantasy Premier League (FPL) League data using Str
 - **CSV Export**: Export data to CSV files
 - **Charts**: Interactive visualization with Plotly
 - **Caching**: Tối ưu hiệu năng với cache
+- **Clean UI**: Ẩn các thông báo không cần thiết để giao diện gọn gàng
 
 ## 📋 Yêu cầu
 

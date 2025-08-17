@@ -43,7 +43,8 @@ def show_temporary_message(message: str, message_type: str = "success"):
     For Streamlit, we'll rely on the natural flow to clear messages
     """
     if message_type == "success":
-        st.success(message)
+        # Suppress success messages to reduce UI clutter
+        pass
     elif message_type == "warning":
         # Only show critical warnings, suppress routine ones
         if "404 Client Error" not in message and "Unable to fetch data for entry" not in message:
@@ -51,7 +52,8 @@ def show_temporary_message(message: str, message_type: str = "success"):
     elif message_type == "error":
         st.error(message)
     elif message_type == "info":
-        st.info(message)
+        # Suppress info messages to reduce UI clutter
+        pass
 
 def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_mapping: dict = None) -> str:
     """
@@ -340,8 +342,8 @@ def get_all_league_entries(league_id: int, phase: int) -> pd.DataFrame:
         raise FPLError("Unable to fetch any entries data")
 
     # Create temporary message that will be cleared by subsequent operations
-    status_placeholder = st.empty()
-    status_placeholder.success(f"Loaded {len(all_entries)} entries from {page-1} pages")
+    # status_placeholder = st.empty()
+    # status_placeholder.success(f"Loaded {len(all_entries)} entries from {page-1} pages")
     return pd.DataFrame(all_entries)
 
 def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
@@ -764,8 +766,8 @@ def get_current_gameweek_range(entries_df: pd.DataFrame) -> List[int]:
 
     gw_range = list(range(1, current_gw_end + 1))
     # Create temporary message that will be cleared by subsequent operations
-    status_placeholder = st.empty()
-    status_placeholder.success(f"Auto-detected gameweek range: GW1 to GW{current_gw_end}")
+    # status_placeholder = st.empty()
+    # status_placeholder.success(f"Auto-detected gameweek range: GW1 to GW{current_gw_end}")
 
     return gw_range
 
@@ -1112,10 +1114,12 @@ def main():
             st.session_state.data_loaded_at = time.time()  # Track when data was loaded
 
             if refresh_data:
-                show_temporary_message("Data refreshed successfully!", "success")
+                # show_temporary_message("Data refreshed successfully!", "success")
+                pass
             else:
                 # First time loading
-                show_temporary_message("Data loaded and cached for faster access!", "info")
+                # show_temporary_message("Data loaded and cached for faster access!", "info")
+                pass
 
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
