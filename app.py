@@ -393,6 +393,14 @@ def build_month_points_table_full(gw_points_df: pd.DataFrame, month_mapping: Dic
     # Reset index for export
     result = pivot_points.reset_index()
 
+    # Add Rank column based on Total points (descending)
+    result = result.sort_values('Total', ascending=False)
+    result['Rank'] = range(1, len(result) + 1)
+
+    # Reorder columns to have Rank first
+    cols = ['Rank', 'Team_ID', 'Manager', 'Team'] + [col for col in result.columns if col.startswith('Month_')] + ['Total']
+    result = result[cols]
+
     return result
 
 def compute_top_picks(entries_df: pd.DataFrame, gw_range: List[int], bootstrap_df: pd.DataFrame,
@@ -928,7 +936,11 @@ def main():
             if max_entries:
                 display_df = display_df.head(max_entries)
 
-            st.dataframe(display_df, use_container_width=True)
+            # Prepare display dataframe: hide Team_ID, use Rank as index
+            display_df_formatted = display_df[['Rank', 'Manager', 'Team', 'Total']].copy()
+            display_df_formatted = display_df_formatted.set_index('Rank')
+
+            st.dataframe(display_df_formatted, use_container_width=True)
 
             # Download button
             filename = f"fpl_{league_id}_members.csv"
@@ -968,12 +980,19 @@ def main():
                     # Combine points and transfers
                     combined_df = pd.concat([points_pivot, transfers_pivot], axis=1)
 
+                    # Reset index to get Manager and Team as columns
+                    combined_df = combined_df.reset_index()
+
                     # Add Total column (sum of all points columns)
                     points_cols = [f'GW{gw}_Points' for gw in sorted(gw_range)]
                     combined_df['Total'] = combined_df[points_cols].sum(axis=1)
 
-                    # Sort columns to group GW data together, with Total at the end
-                    gw_cols = []
+                    # Add Rank column based on Total points (descending)
+                    combined_df = combined_df.sort_values('Total', ascending=False)
+                    combined_df['Rank'] = range(1, len(combined_df) + 1)
+
+                    # Sort columns to group GW data together, with Rank, Manager, Team first and Total at the end
+                    gw_cols = ['Rank', 'Manager', 'Team']
                     for gw in sorted(gw_range):
                         gw_cols.extend([f'GW{gw}_Points', f'GW{gw}_Transfers'])
                     gw_cols.append('Total')
@@ -988,8 +1007,10 @@ def main():
                     st.error(f"Error loading GW data: {str(e)}")
 
             if 'gw_display_df' in st.session_state:
-                display_df = st.session_state.gw_display_df
-                st.dataframe(display_df, use_container_width=True)
+                display_df = st.session_state.gw_display_df.copy()
+                # Use Rank as index
+                display_df_formatted = display_df.set_index('Rank')
+                st.dataframe(display_df_formatted, use_container_width=True)
 
                 # Download button
                 filename = f"fpl_{league_id}_gw_points.csv"
@@ -1123,7 +1144,12 @@ def main():
                         month_mapping
                     )
 
-                    st.dataframe(month_points_df, use_container_width=True)
+                    # Prepare display dataframe: hide Team_ID, use Rank as index
+                    display_cols = [col for col in month_points_df.columns if col != 'Team_ID']
+                    display_df = month_points_df[display_cols].copy()
+                    display_df_formatted = display_df.set_index('Rank')
+
+                    st.dataframe(display_df_formatted, use_container_width=True)
 
                     # Download button
                     filename = f"fpl_{league_id}_month_points.csv"
