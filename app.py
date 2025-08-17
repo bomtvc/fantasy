@@ -36,9 +36,10 @@ def show_temporary_message(message: str, message_type: str = "success"):
     elif message_type == "info":
         st.info(message)
 
-def render_custom_table(df: pd.DataFrame, table_type: str = "default") -> str:
+def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_mapping: dict = None) -> str:
     """
     Render a DataFrame as a custom HTML table with CSS styling
+    For GW Points table, creates hyperlinks to team lineups
     """
     if df.empty:
         return "<p>No data available</p>"
@@ -57,6 +58,12 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default") -> str:
     html += '<tbody>'
     for _, row in df.iterrows():
         html += '<tr>'
+
+        # Get Team_ID for this row if available (for GW Points hyperlinks)
+        team_id = None
+        if team_id_mapping and 'Manager' in row:
+            team_id = team_id_mapping.get(row['Manager'])
+
         for i, (col, value) in enumerate(row.items()):
             # Apply different CSS classes based on column type
             css_class = ""
@@ -82,14 +89,24 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default") -> str:
             elif 'Transfers' in col:
                 css_class = "transfers-cell"
 
-            # Format value
+            # Format value and create hyperlink for GW Points
             if pd.isna(value):
                 display_value = "-"
             elif isinstance(value, (int, float)):
                 if col == 'Transfers' or 'Transfers' in col:
                     display_value = f"{int(value)}" if value != 0 else "-"
                 else:
-                    display_value = f"{int(value)}" if value == int(value) else f"{value:.1f}"
+                    formatted_value = f"{int(value)}" if value == int(value) else f"{value:.1f}"
+
+                    # Create hyperlink for GW Points columns
+                    if (table_type == "gw" and 'Points' in col and 'GW' in col and
+                        team_id and value > 0):
+                        # Extract GW number from column name (e.g., "GW1_Points" -> "1")
+                        gw_num = col.replace('GW', '').replace('_Points', '')
+                        lineup_url = f"https://fantasy.premierleague.com/entry/{team_id}/event/{gw_num}"
+                        display_value = f'<a href="{lineup_url}" target="_blank" class="gw-points-link">{formatted_value}</a>'
+                    else:
+                        display_value = formatted_value
             else:
                 display_value = str(value)
 
@@ -1086,6 +1103,28 @@ def main():
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
+
+        /* Hyperlink styling for GW Points */
+        .gw-points-link {
+            color: #1976d2;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+
+        .gw-points-link:hover {
+            background-color: #e3f2fd;
+            color: #0d47a1;
+            text-decoration: underline;
+            transform: scale(1.05);
+        }
+
+        .gw-points-link:visited {
+            color: #7b1fa2;
+        }
         </style>
         """, unsafe_allow_html=True)
 
@@ -1179,8 +1218,14 @@ def main():
             if 'gw_display_df' in st.session_state:
                 display_df = st.session_state.gw_display_df.copy()
 
-                # Render custom table
-                table_html = render_custom_table(display_df, "gw")
+                # Create team_id_mapping for hyperlinks
+                team_id_mapping = {}
+                if 'entries_df' in st.session_state:
+                    entries_df = st.session_state.entries_df
+                    team_id_mapping = dict(zip(entries_df['Manager'], entries_df['Team_ID']))
+
+                # Render custom table with hyperlinks
+                table_html = render_custom_table(display_df, "gw", team_id_mapping)
                 st.markdown(table_html, unsafe_allow_html=True)
 
                 # Download button
