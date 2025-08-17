@@ -36,6 +36,69 @@ def show_temporary_message(message: str, message_type: str = "success"):
     elif message_type == "info":
         st.info(message)
 
+def render_custom_table(df: pd.DataFrame, table_type: str = "default") -> str:
+    """
+    Render a DataFrame as a custom HTML table with CSS styling
+    """
+    if df.empty:
+        return "<p>No data available</p>"
+
+    # Start building HTML
+    html = '<div class="table-container">'
+    html += '<table class="custom-table">'
+
+    # Header
+    html += '<thead><tr>'
+    for col in df.columns:
+        html += f'<th>{col}</th>'
+    html += '</tr></thead>'
+
+    # Body
+    html += '<tbody>'
+    for _, row in df.iterrows():
+        html += '<tr>'
+        for i, (col, value) in enumerate(row.items()):
+            # Apply different CSS classes based on column type
+            css_class = ""
+
+            if col == 'Rank' or (i == 0 and table_type in ['gw', 'month', 'league']):
+                rank_value = int(value) if pd.notna(value) else 0
+                if rank_value == 1:
+                    css_class = "rank-cell rank-1"
+                elif rank_value == 2:
+                    css_class = "rank-cell rank-2"
+                elif rank_value == 3:
+                    css_class = "rank-cell rank-3"
+                else:
+                    css_class = "rank-cell"
+            elif col == 'Manager':
+                css_class = "manager-cell"
+            elif col == 'Team':
+                css_class = "team-cell"
+            elif col == 'Total':
+                css_class = "total-cell"
+            elif 'Points' in col:
+                css_class = "points-cell"
+            elif 'Transfers' in col:
+                css_class = "transfers-cell"
+
+            # Format value
+            if pd.isna(value):
+                display_value = "-"
+            elif isinstance(value, (int, float)):
+                if col == 'Transfers' or 'Transfers' in col:
+                    display_value = f"{int(value)}" if value != 0 else "-"
+                else:
+                    display_value = f"{int(value)}" if value == int(value) else f"{value:.1f}"
+            else:
+                display_value = str(value)
+
+            html += f'<td class="{css_class}">{display_value}</td>'
+        html += '</tr>'
+
+    html += '</tbody></table></div>'
+    return html
+
 def clear_all_cache():
     """
     Clear all cached data and session state
@@ -904,18 +967,124 @@ def main():
         max_entries = st.session_state.max_entries
         league_id = st.session_state.league_id
 
-        # Add CSS for table styling
+        # Add CSS for custom table styling
         st.markdown("""
         <style>
-        .dataframe th {
-            background-color: #f0f2f6 !important;
-            color: #262730 !important;
-            font-weight: bold !important;
-            text-transform: uppercase !important;
-            border: 1px solid #d1d5db !important;
+        /* Custom Table Styling */
+        .custom-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
         }
-        .dataframe td {
-            border: 1px solid #d1d5db !important;
+
+        .custom-table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .custom-table th {
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 12px;
+            border: none;
+        }
+
+        .custom-table tbody tr {
+            border-bottom: 1px solid #e0e0e0;
+            transition: all 0.3s ease;
+        }
+
+        .custom-table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .custom-table tbody tr:hover {
+            background-color: #e3f2fd;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .custom-table td {
+            padding: 12px;
+            border: none;
+            vertical-align: middle;
+        }
+
+        /* Rank column styling */
+        .rank-cell {
+            font-weight: bold;
+            color: #1976d2;
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            text-align: center;
+            border-radius: 4px;
+            margin: 2px;
+            padding: 8px !important;
+        }
+
+        /* Top 3 ranks special styling */
+        .rank-1 {
+            background: linear-gradient(135deg, #ffd700, #ffed4e) !important;
+            color: #b8860b !important;
+            font-weight: bold;
+        }
+
+        .rank-2 {
+            background: linear-gradient(135deg, #c0c0c0, #e8e8e8) !important;
+            color: #696969 !important;
+            font-weight: bold;
+        }
+
+        .rank-3 {
+            background: linear-gradient(135deg, #cd7f32, #daa520) !important;
+            color: #8b4513 !important;
+            font-weight: bold;
+        }
+
+        /* Manager and Team columns */
+        .manager-cell {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .team-cell {
+            color: #34495e;
+            font-style: italic;
+        }
+
+        /* Points columns */
+        .points-cell {
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .total-cell {
+            font-weight: bold;
+            color: #27ae60;
+            background-color: #e8f5e8;
+            text-align: center;
+        }
+
+        /* Transfers columns */
+        .transfers-cell {
+            text-align: center;
+            color: #e74c3c;
+            font-size: 12px;
+        }
+
+        /* Container for table */
+        .table-container {
+            overflow-x: auto;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         </style>
         """, unsafe_allow_html=True)
@@ -936,11 +1105,12 @@ def main():
             if max_entries:
                 display_df = display_df.head(max_entries)
 
-            # Prepare display dataframe: hide Team_ID, use Rank as index
+            # Prepare display dataframe: hide Team_ID
             display_df_formatted = display_df[['Rank', 'Manager', 'Team', 'Total']].copy()
-            display_df_formatted = display_df_formatted.set_index('Rank')
 
-            st.dataframe(display_df_formatted, use_container_width=True)
+            # Render custom table
+            table_html = render_custom_table(display_df_formatted, "league")
+            st.markdown(table_html, unsafe_allow_html=True)
 
             # Download button
             filename = f"fpl_{league_id}_members.csv"
@@ -1008,9 +1178,10 @@ def main():
 
             if 'gw_display_df' in st.session_state:
                 display_df = st.session_state.gw_display_df.copy()
-                # Use Rank as index
-                display_df_formatted = display_df.set_index('Rank')
-                st.dataframe(display_df_formatted, use_container_width=True)
+
+                # Render custom table
+                table_html = render_custom_table(display_df, "gw")
+                st.markdown(table_html, unsafe_allow_html=True)
 
                 # Download button
                 filename = f"fpl_{league_id}_gw_points.csv"
@@ -1144,12 +1315,13 @@ def main():
                         month_mapping
                     )
 
-                    # Prepare display dataframe: hide Team_ID, use Rank as index
+                    # Prepare display dataframe: hide Team_ID
                     display_cols = [col for col in month_points_df.columns if col != 'Team_ID']
                     display_df = month_points_df[display_cols].copy()
-                    display_df_formatted = display_df.set_index('Rank')
 
-                    st.dataframe(display_df_formatted, use_container_width=True)
+                    # Render custom table
+                    table_html = render_custom_table(display_df, "month")
+                    st.markdown(table_html, unsafe_allow_html=True)
 
                     # Download button
                     filename = f"fpl_{league_id}_month_points.csv"
@@ -1355,7 +1527,9 @@ def main():
                 top_picks_df = st.session_state.top_picks_df
 
                 if not top_picks_df.empty:
-                    st.dataframe(top_picks_df, use_container_width=True)
+                    # Render custom table
+                    table_html = render_custom_table(top_picks_df, "picks")
+                    st.markdown(table_html, unsafe_allow_html=True)
 
                     # Download button
                     filename = f"fpl_{league_id}_top_picks.csv"
@@ -1442,14 +1616,9 @@ def main():
                             </style>
                             """, unsafe_allow_html=True)
 
-                            # Display the table with custom styling
-                            st.markdown('<div class="ranking-table">', unsafe_allow_html=True)
-                            st.dataframe(
-                                weekly_ranking,
-                                use_container_width=True,
-                                hide_index=True
-                            )
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            # Render custom table
+                            table_html = render_custom_table(weekly_ranking, "ranking")
+                            st.markdown(table_html, unsafe_allow_html=True)
 
                             # Highlight top 3
                             if len(weekly_ranking) >= 3:
@@ -1507,14 +1676,9 @@ def main():
                         )
 
                         if not monthly_ranking.empty:
-                            # Display the table with custom styling
-                            st.markdown('<div class="ranking-table">', unsafe_allow_html=True)
-                            st.dataframe(
-                                monthly_ranking,
-                                use_container_width=True,
-                                hide_index=True
-                            )
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            # Render custom table
+                            table_html = render_custom_table(monthly_ranking, "ranking")
+                            st.markdown(table_html, unsafe_allow_html=True)
 
                             # Highlight top 3
                             if len(monthly_ranking) >= 3:
@@ -1650,10 +1814,9 @@ def main():
                         </style>
                         """, unsafe_allow_html=True)
 
-                        # Display the table
-                        st.markdown('<div class="awards-table">', unsafe_allow_html=True)
-                        st.dataframe(awards_df, use_container_width=True, hide_index=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        # Render custom table
+                        table_html = render_custom_table(awards_df, "awards")
+                        st.markdown(table_html, unsafe_allow_html=True)
 
                         # Highlight top 3 award winners
                         if len(awards_df) >= 3:
