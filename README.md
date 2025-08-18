@@ -114,10 +114,11 @@ Có nghĩa là:
 
 ### 🎉 Fun Stats
 - Weekly gameweek statistics table with interesting insights
-- **Best Captain**: Manager with highest scoring captain of the week
-- **Worst Captain**: Manager with lowest scoring captain of the week
-- **Best Bench**: Manager with highest total bench points (positions 12-15) of the week
-- Display manager name, player name and detailed scores
+- **Best Captain**: Manager(s) with highest scoring captain of the week (handles ties)
+- **Worst Captain**: Manager(s) with lowest scoring captain of the week (handles ties)
+- **Best Bench**: Manager(s) with highest total bench points (positions 12-15) of the week (handles ties)
+- Display all managers with same scores when there are ties
+- Multiple managers separated by " | " when tied
 - Overall statistics: Captain King, Bench Expert, statistics diversity
 - Uses API to fetch picks and player scores for each GW
 - Analyze and compare captain and bench performance between managers

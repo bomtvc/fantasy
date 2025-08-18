@@ -560,16 +560,26 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
 
         # Process GW results
         if gw_data:
-            # Find best and worst captains
-            best_captain = max(gw_data, key=lambda x: x['captain_points'])
-            worst_captain = min(gw_data, key=lambda x: x['captain_points'])
-            best_bench = max(gw_data, key=lambda x: x['bench_total_points'])
+            # Find best and worst captains (handle ties)
+            max_captain_points = max(gw_data, key=lambda x: x['captain_points'])['captain_points']
+            min_captain_points = min(gw_data, key=lambda x: x['captain_points'])['captain_points']
+            max_bench_points = max(gw_data, key=lambda x: x['bench_total_points'])['bench_total_points']
+
+            # Get all managers with max/min scores
+            best_captains = [x for x in gw_data if x['captain_points'] == max_captain_points]
+            worst_captains = [x for x in gw_data if x['captain_points'] == min_captain_points]
+            best_benches = [x for x in gw_data if x['bench_total_points'] == max_bench_points]
+
+            # Format display strings
+            best_captain_str = " | ".join([f"{x['manager']} - {x['captain_name']} ({x['captain_points']})" for x in best_captains])
+            worst_captain_str = " | ".join([f"{x['manager']} - {x['captain_name']} ({x['captain_points']})" for x in worst_captains])
+            best_bench_str = " | ".join([f"{x['manager']} ({x['bench_total_points']})" for x in best_benches])
 
             results.append({
                 'GW': f"GW {gw}",
-                'Best_Captain': f"{best_captain['manager']} - {best_captain['captain_name']} ({best_captain['captain_points']})",
-                'Worst_Captain': f"{worst_captain['manager']} - {worst_captain['captain_name']} ({worst_captain['captain_points']})",
-                'Best_Bench': f"{best_bench['manager']} ({best_bench['bench_total_points']})"
+                'Best_Captain': best_captain_str,
+                'Worst_Captain': worst_captain_str,
+                'Best_Bench': best_bench_str
             })
 
     progress_bar.empty()
@@ -1468,13 +1478,27 @@ def main():
 
         /* Fun stats specific styling */
         .custom-table tbody tr td.captain-cell {
-            max-width: 200px;
+            max-width: 300px;
             word-wrap: break-word;
+            white-space: normal;
+            line-height: 1.4;
+            padding: 8px;
         }
 
         .custom-table tbody tr td.bench-cell {
             text-align: center;
             font-weight: bold;
+            max-width: 200px;
+            word-wrap: break-word;
+            white-space: normal;
+            line-height: 1.4;
+            padding: 8px;
+        }
+
+        /* Handle multiple managers display */
+        .custom-table tbody tr td.captain-cell,
+        .custom-table tbody tr td.bench-cell {
+            font-size: 13px;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -2524,20 +2548,29 @@ def main():
                     fun_data = st.session_state.fun_stats_df
 
                     if not fun_data.empty:
-                        # Extract manager names from the stats
+                        # Extract manager names from the stats (handle multiple managers per entry)
                         best_captains = []
                         worst_captains = []
                         best_benches = []
 
                         for _, row in fun_data.iterrows():
-                            # Extract manager names
-                            best_cap = row['Best_Captain'].split(' - ')[0]
-                            worst_cap = row['Worst_Captain'].split(' - ')[0]
-                            best_bench = row['Best_Bench'].split(' (')[0]
+                            # Extract manager names (handle multiple managers separated by " | ")
+                            best_cap_entries = row['Best_Captain'].split(' | ')
+                            worst_cap_entries = row['Worst_Captain'].split(' | ')
+                            best_bench_entries = row['Best_Bench'].split(' | ')
 
-                            best_captains.append(best_cap)
-                            worst_captains.append(worst_cap)
-                            best_benches.append(best_bench)
+                            # Extract manager names from each entry
+                            for entry in best_cap_entries:
+                                manager_name = entry.split(' - ')[0]
+                                best_captains.append(manager_name)
+
+                            for entry in worst_cap_entries:
+                                manager_name = entry.split(' - ')[0]
+                                worst_captains.append(manager_name)
+
+                            for entry in best_bench_entries:
+                                manager_name = entry.split(' (')[0]
+                                best_benches.append(manager_name)
 
                         # Count occurrences
                         from collections import Counter
@@ -2551,26 +2584,32 @@ def main():
                         with col1:
                             st.markdown("#### 🏆 Captain King")
                             if best_cap_counts:
-                                top_captain_manager = best_cap_counts.most_common(1)[0]
-                                st.metric("Best Captain Manager",
-                                         f"{top_captain_manager[0]}",
-                                         f"{top_captain_manager[1]} times")
+                                max_count = best_cap_counts.most_common(1)[0][1]
+                                top_managers = [manager for manager, count in best_cap_counts.items() if count == max_count]
+                                managers_str = " | ".join(top_managers)
+                                st.metric("Best Captain Manager(s)",
+                                         managers_str,
+                                         f"{max_count} times")
 
                         with col2:
                             st.markdown("#### 😅 Captain... Unlucky")
                             if worst_cap_counts:
-                                worst_captain_manager = worst_cap_counts.most_common(1)[0]
-                                st.metric("Worst Captain Manager",
-                                         f"{worst_captain_manager[0]}",
-                                         f"{worst_captain_manager[1]} times")
+                                max_count = worst_cap_counts.most_common(1)[0][1]
+                                worst_managers = [manager for manager, count in worst_cap_counts.items() if count == max_count]
+                                managers_str = " | ".join(worst_managers)
+                                st.metric("Worst Captain Manager(s)",
+                                         managers_str,
+                                         f"{max_count} times")
 
                         with col3:
                             st.markdown("#### 🔄 Bench Expert")
                             if best_bench_counts:
-                                best_bench_manager = best_bench_counts.most_common(1)[0]
-                                st.metric("Best Bench Manager",
-                                         f"{best_bench_manager[0]}",
-                                         f"{best_bench_manager[1]} times")
+                                max_count = best_bench_counts.most_common(1)[0][1]
+                                bench_managers = [manager for manager, count in best_bench_counts.items() if count == max_count]
+                                managers_str = " | ".join(bench_managers)
+                                st.metric("Best Bench Manager(s)",
+                                         managers_str,
+                                         f"{max_count} times")
 
                         # Fun facts
                         st.markdown("#### 🎯 Fun Facts")
