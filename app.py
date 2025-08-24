@@ -55,6 +55,61 @@ def show_temporary_message(message: str, message_type: str = "success"):
         # Suppress info messages to reduce UI clutter
         pass
 
+def render_awards_summary_table(df: pd.DataFrame, month_mapping: Dict[int, int]) -> str:
+    """
+    Render awards summary table with merged cells for monthly winners
+    """
+    if df.empty:
+        return "<p>No data available</p>"
+
+    # Group GWs by month for merging cells
+    month_groups = {}
+    for _, row in df.iterrows():
+        gw = row['GW']
+        month = month_mapping.get(gw, 1)
+        if month not in month_groups:
+            month_groups[month] = []
+        month_groups[month].append(row)
+
+    # Start building HTML
+    html = '<div class="table-container">'
+    html += '<table class="custom-table awards-summary-table">'
+
+    # Header
+    html += '<thead><tr>'
+    html += '<th>GW</th>'
+    html += '<th>Weekly Wins</th>'
+    html += '<th>Monthly Wins</th>'
+    html += '</tr></thead>'
+
+    # Body
+    html += '<tbody>'
+
+    for month in sorted(month_groups.keys()):
+        month_rows = month_groups[month]
+        month_winner = month_rows[0]['Monthly_Wins'] if month_rows else ""
+
+        for i, row in enumerate(month_rows):
+            html += '<tr>'
+
+            # GW column
+            html += f'<td class="gw-cell">{row["GW"]}</td>'
+
+            # Weekly Wins column
+            weekly_winner = row['Weekly_Wins']
+            html += f'<td class="manager-cell">{weekly_winner}</td>'
+
+            # Monthly Wins column (merged for the month)
+            if i == 0:  # First row of the month
+                rowspan = len(month_rows)
+                html += f'<td class="monthly-winner-cell" rowspan="{rowspan}">{month_winner}</td>'
+            # Other rows don't add the monthly cell (it's merged)
+
+            html += '</tr>'
+
+    html += '</tbody></table></div>'
+    return html
+
 def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_mapping: dict = None) -> str:
     """
     Render a DataFrame as a custom HTML table with CSS styling
@@ -109,6 +164,8 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                 css_class = "transfers-cell"
             elif table_type == "chip" and col.startswith('GW'):
                 css_class = "chip-cell"
+            elif table_type == "transfer" and col.startswith('GW'):
+                css_class = "transfer-cell"
             elif table_type == "fun_stats":
                 if col == 'GW':
                     css_class = "gw-cell"
@@ -136,8 +193,29 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                     else:
                         display_value = formatted_value
             else:
+                # Handle transfer display with colors
+                if table_type == "transfer" and col.startswith('GW') and str(value) != '-':
+                    transfer_text = str(value)
+
+                    # Handle multiple transfers separated by ' | '
+                    if ' | ' in transfer_text:
+                        transfers = transfer_text.split(' | ')
+                        formatted_transfers = []
+                        for transfer in transfers:
+                            if ' - ' in transfer:
+                                player_in, player_out = transfer.split(' - ', 1)
+                                formatted_transfer = f'<span style="color: #4caf50; font-weight: bold;">{player_in}</span> - <span style="color: #f44336; font-weight: bold;">{player_out}</span>'
+                                formatted_transfers.append(formatted_transfer)
+                            else:
+                                formatted_transfers.append(transfer)
+                        display_value = '<br>'.join(formatted_transfers)
+                    elif ' - ' in transfer_text:
+                        player_in, player_out = transfer_text.split(' - ', 1)
+                        display_value = f'<span style="color: #4caf50; font-weight: bold;">{player_in}</span> - <span style="color: #f44336; font-weight: bold;">{player_out}</span>'
+                    else:
+                        display_value = transfer_text
                 # Handle chip display with icons and colors
-                if table_type == "chip" and col.startswith('GW') and str(value) != '-':
+                elif table_type == "chip" and col.startswith('GW') and str(value) != '-':
                     chip_name = str(value)
                     chip_configs = {
                         'wildcard': {
@@ -378,6 +456,19 @@ def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
         show_temporary_message(f"Unable to fetch data for entry {entry_id}, GW {gw}: {str(e)}", "warning")
         return None
 
+@st.cache_data(ttl=config.API_CACHE_TTL)
+def get_entry_transfers(entry_id: int) -> Optional[Dict]:
+    """
+    Get transfer history for a specific entry
+    """
+    try:
+        url = f"https://fantasy.premierleague.com/api/entry/{entry_id}/transfers/"
+        data = fetch_json(url)
+        return data
+    except Exception as e:
+        show_temporary_message(f"Unable to fetch transfer data for entry {entry_id}: {str(e)}", "warning")
+        return None
+
 def get_player_gw_points(element_id: int, gw: int) -> int:
     """
     Get player points for a specific gameweek from element-summary API
@@ -394,6 +485,84 @@ def get_player_gw_points(element_id: int, gw: int) -> int:
         return 0
     except Exception as e:
         return 0
+
+def build_transfer_history_table(entries_df: pd.DataFrame, bootstrap_df: pd.DataFrame, max_entries: Optional[int] = None) -> pd.DataFrame:
+    """
+    Build transfer history table for all entries showing transfers by gameweek
+    """
+    if max_entries:
+        entries_df = entries_df.head(max_entries)
+
+    results = []
+    total_requests = len(entries_df)
+
+    # Progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    # Create player name mapping
+    player_mapping = dict(zip(bootstrap_df['id'], bootstrap_df['web_name']))
+
+    with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
+        # Submit all tasks
+        future_to_info = {}
+        for _, entry in entries_df.iterrows():
+            future = executor.submit(get_entry_transfers, entry['Team_ID'])
+            future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'])
+
+        # Collect results
+        completed = 0
+        for future in as_completed(future_to_info):
+            team_id, manager, team = future_to_info[future]
+            completed += 1
+
+            # Update progress
+            progress = completed / total_requests
+            progress_bar.progress(progress)
+            status_text.text(f"Fetching transfer data: {completed}/{total_requests} ({progress:.1%})")
+
+            try:
+                data = future.result()
+                if data and isinstance(data, list):
+                    for transfer in data:
+                        element_in = transfer.get('element_in')
+                        element_out = transfer.get('element_out')
+                        event = transfer.get('event')
+
+                        # Get player names
+                        player_in_name = player_mapping.get(element_in, f"Player_{element_in}") if element_in else "Unknown"
+                        player_out_name = player_mapping.get(element_out, f"Player_{element_out}") if element_out else "Unknown"
+
+                        # Create transfer string with colors
+                        transfer_text = f"{player_in_name} - {player_out_name}"
+
+                        results.append({
+                            'Team_ID': team_id,
+                            'Manager': manager,
+                            'Team': team,
+                            'GW': event,
+                            'Transfer': transfer_text,
+                            'Player_In': player_in_name,
+                            'Player_Out': player_out_name
+                        })
+                else:
+                    # Add empty entry if no transfers
+                    pass
+
+            except Exception as e:
+                show_temporary_message(f"Error processing transfers for entry {team_id}: {str(e)}", "warning")
+
+            # Small delay to avoid rate limit
+            time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
+
+    progress_bar.empty()
+    status_text.empty()
+
+    if not results:
+        # Return empty dataframe with proper columns if no transfers found
+        return pd.DataFrame(columns=['Team_ID', 'Manager', 'Team', 'GW', 'Transfer', 'Player_In', 'Player_Out'])
+
+    return pd.DataFrame(results)
 
 def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
     """
@@ -1161,6 +1330,63 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
 
     return awards_df
 
+def build_awards_summary_table(gw_points_df: pd.DataFrame, month_mapping: Dict[int, int]) -> pd.DataFrame:
+    """
+    Build awards summary table showing GW, Weekly_Wins, and Monthly_Wins
+    """
+    if gw_points_df.empty:
+        return pd.DataFrame(columns=['GW', 'Weekly_Wins', 'Monthly_Wins'])
+
+    # Get available GWs
+    available_gws = sorted(gw_points_df['GW'].unique())
+
+    # Initialize results
+    results = []
+
+    # Process each GW
+    for gw in available_gws:
+        # Get weekly winner
+        weekly_ranking = build_weekly_ranking(gw_points_df, gw)
+        weekly_winner = ""
+
+        if not weekly_ranking.empty:
+            # Get the winner (rank 1 with lowest transfers if tied)
+            winners = weekly_ranking[weekly_ranking['Rank'] == 1]
+            if len(winners) > 0:
+                weekly_winner = winners.iloc[0]['Manager']
+
+        # Determine which month this GW belongs to
+        month = month_mapping.get(gw, 1)
+
+        results.append({
+            'GW': gw,
+            'Weekly_Wins': weekly_winner,
+            'Month': month
+        })
+
+    # Convert to DataFrame
+    awards_summary_df = pd.DataFrame(results)
+
+    # Calculate monthly winners
+    monthly_winners = {}
+    available_months = sorted(set(month_mapping.values()))
+
+    for month in available_months:
+        monthly_ranking = build_monthly_ranking(gw_points_df, month_mapping, month)
+        if not monthly_ranking.empty:
+            # Get the winner (rank 1 with lowest transfers if tied)
+            winners = monthly_ranking[monthly_ranking['Rank'] == 1]
+            if len(winners) > 0:
+                monthly_winners[month] = winners.iloc[0]['Manager']
+
+    # Add monthly winners to the dataframe
+    awards_summary_df['Monthly_Wins'] = awards_summary_df['Month'].map(monthly_winners).fillna("")
+
+    # Drop the temporary Month column
+    awards_summary_df = awards_summary_df.drop('Month', axis=1)
+
+    return awards_summary_df
+
 def create_download_button(df: pd.DataFrame, filename: str, button_text: str, key: str = None):
     """
     Create download button for CSV
@@ -1500,17 +1726,66 @@ def main():
         .custom-table tbody tr td.bench-cell {
             font-size: 13px;
         }
+
+        /* Transfer table styling */
+        .custom-table tbody tr td.transfer-cell {
+            font-size: 12px;
+            text-align: center;
+            padding: 8px 4px;
+            min-width: 120px;
+            vertical-align: top;
+            line-height: 1.4;
+        }
+
+        /* Awards summary table styling */
+        .awards-summary-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+
+        .awards-summary-table th {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
+            color: #333;
+            font-weight: bold;
+            text-align: center;
+            padding: 12px;
+            border: 1px solid #ddd;
+        }
+
+        .awards-summary-table td {
+            text-align: center;
+            padding: 10px;
+            border: 1px solid #ddd;
+            vertical-align: middle;
+        }
+
+        .awards-summary-table .monthly-winner-cell {
+            background-color: #fff3cd;
+            font-weight: bold;
+            color: #856404;
+            border-left: 3px solid #ffc107;
+        }
+
+        .awards-summary-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .awards-summary-table tr:hover {
+            background-color: #e9ecef;
+        }
         </style>
         """, unsafe_allow_html=True)
 
         # Tabs
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
             "👥 League Members",
             "📊 GW Points",
             "📅 Month Points",
             "⭐ Top Picks",
             "🏆 Rankings",
             "🏅 Awards Statistics",
+            "🔄 Transfer",
             "🎯 Chip History",
             "🎉 Fun Stats"
         ])
@@ -2211,6 +2486,27 @@ def main():
                             month_mapping
                         )
 
+                        # Build awards summary table
+                        awards_summary_df = build_awards_summary_table(
+                            st.session_state.gw_points_df,
+                            month_mapping
+                        )
+
+                    # Display Awards Summary Table
+                    if not awards_summary_df.empty:
+                        st.markdown("### 📅 Weekly and Monthly Winners Summary")
+                        st.markdown("This table shows the winner of each gameweek and month. Monthly winners are determined by total points across all gameweeks in that month.")
+
+                        # Render awards summary table with merged cells
+                        awards_summary_html = render_awards_summary_table(awards_summary_df, month_mapping)
+                        st.markdown(awards_summary_html, unsafe_allow_html=True)
+
+                        # Download button for awards summary
+                        filename_summary = f"fpl_{league_id}_awards_summary.csv"
+                        create_download_button(awards_summary_df, filename_summary, "📥 Download Awards Summary CSV", key="download_awards_summary")
+
+                        st.markdown("---")
+
                     if not awards_df.empty:
                         # Display awards table
                         st.markdown("### 🏆 Awards Leaderboard")
@@ -2380,6 +2676,173 @@ def main():
                 st.info("GW Points data is loading...")
 
         with tab7:
+            st.subheader("Transfer History")
+
+            # Auto-load Transfer data if not already loaded or if data was refreshed
+            should_load_transfer_data = ('transfer_history_df' not in st.session_state) or refresh_data
+
+            if should_load_transfer_data:
+                try:
+                    with st.spinner("Loading transfer data..."):
+                        transfer_history_df = build_transfer_history_table(entries_df, bootstrap_df, max_entries)
+
+                    if not transfer_history_df.empty:
+                        # Group transfers by Manager, Team, and GW to combine multiple transfers
+                        grouped_transfers = transfer_history_df.groupby(['Manager', 'Team', 'GW'])['Transfer'].apply(
+                            lambda x: ' | '.join(x) if len(x) > 1 else x.iloc[0]
+                        ).reset_index()
+
+                        # Create pivot table for display
+                        transfer_pivot = grouped_transfers.pivot_table(
+                            index=['Manager', 'Team'],
+                            columns='GW',
+                            values='Transfer',
+                            fill_value='-',
+                            aggfunc='first'
+                        )
+
+                        # Rename columns to GW1, GW2, etc.
+                        transfer_pivot.columns = [f'GW{col}' for col in transfer_pivot.columns]
+
+                        # Reset index to get Manager and Team as columns
+                        transfer_pivot = transfer_pivot.reset_index()
+
+                        # Sort by Manager name alphabetically
+                        transfer_pivot = transfer_pivot.sort_values('Manager')
+
+                        # Get available GWs from the data
+                        available_gws = sorted([int(col.replace('GW', '')) for col in transfer_pivot.columns if col.startswith('GW')])
+
+                        # Reorder columns to have Manager, Team first
+                        gw_cols = ['Manager', 'Team'] + [f'GW{gw}' for gw in available_gws]
+                        transfer_pivot = transfer_pivot[gw_cols]
+
+                        st.session_state.transfer_history_df = transfer_history_df
+                        st.session_state.transfer_display_df = transfer_pivot
+                    else:
+                        # Create empty display dataframe
+                        st.session_state.transfer_history_df = pd.DataFrame()
+                        st.session_state.transfer_display_df = pd.DataFrame(columns=['Manager', 'Team'])
+
+                except Exception as e:
+                    st.error(f"Error loading transfer data: {str(e)}")
+
+            if 'transfer_display_df' in st.session_state and not st.session_state.transfer_display_df.empty:
+                display_df = st.session_state.transfer_display_df.copy()
+
+                # Create team_id_mapping for potential future use
+                team_id_mapping = {}
+                if 'entries_df' in st.session_state:
+                    entries_df = st.session_state.entries_df
+                    team_id_mapping = dict(zip(entries_df['Manager'], entries_df['Team_ID']))
+
+                # Render custom table
+                table_html = render_custom_table(display_df, "transfer", team_id_mapping)
+                st.markdown(table_html, unsafe_allow_html=True)
+
+                # Download button
+                filename = f"fpl_{league_id}_transfer_history.csv"
+                flat_df = st.session_state.transfer_history_df
+                create_download_button(flat_df, filename, "📥 Download CSV", key="download_transfer")
+
+                # Add transfer statistics
+                st.markdown("---")
+                st.subheader("📊 Transfer Statistics")
+
+                try:
+                    transfer_data = st.session_state.transfer_history_df
+
+                    if not transfer_data.empty:
+                        # Transfer activity by GW
+                        st.markdown("#### 🔄 Transfer Activity by Gameweek")
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            # Transfer count by GW
+                            gw_transfer_counts = transfer_data.groupby('GW').size()
+                            fig = px.bar(
+                                x=gw_transfer_counts.index,
+                                y=gw_transfer_counts.values,
+                                title="Number of Transfers by Gameweek",
+                                labels={'x': 'Gameweek', 'y': 'Number of Transfers'}
+                            )
+                            fig.update_layout(height=400)
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        with col2:
+                            # Most active managers
+                            manager_transfer_counts = transfer_data.groupby('Manager').size().sort_values(ascending=False).head(10)
+                            fig2 = px.bar(
+                                x=manager_transfer_counts.values,
+                                y=manager_transfer_counts.index,
+                                orientation='h',
+                                title="Most Active Managers (Top 10)",
+                                labels={'x': 'Number of Transfers', 'y': 'Manager'}
+                            )
+                            fig2.update_layout(height=400)
+                            st.plotly_chart(fig2, use_container_width=True)
+
+                        # Summary metrics
+                        st.markdown("#### 📈 Summary Metrics")
+                        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+
+                        with metric_col1:
+                            total_transfers = len(transfer_data)
+                            st.metric("Total Transfers", total_transfers)
+
+                        with metric_col2:
+                            unique_managers = transfer_data['Manager'].nunique()
+                            st.metric("Managers Made Transfers", unique_managers)
+
+                        with metric_col3:
+                            avg_transfers_per_manager = total_transfers / unique_managers if unique_managers > 0 else 0
+                            st.metric("Avg Transfers/Manager", f"{avg_transfers_per_manager:.1f}")
+
+                        with metric_col4:
+                            if not transfer_data.empty:
+                                most_active_gw = transfer_data.groupby('GW').size().idxmax()
+                                st.metric("Most Active GW", f"GW{most_active_gw}")
+
+                        # Most transferred players
+                        st.markdown("#### ⭐ Most Transferred Players")
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown("**Most Transferred IN**")
+                            players_in = transfer_data['Player_In'].value_counts().head(10)
+                            if not players_in.empty:
+                                for i, (player, count) in enumerate(players_in.items(), 1):
+                                    st.write(f"{i}. **{player}** - {count} times")
+                            else:
+                                st.info("No transfer data available")
+
+                        with col2:
+                            st.markdown("**Most Transferred OUT**")
+                            players_out = transfer_data['Player_Out'].value_counts().head(10)
+                            if not players_out.empty:
+                                for i, (player, count) in enumerate(players_out.items(), 1):
+                                    st.write(f"{i}. **{player}** - {count} times")
+                            else:
+                                st.info("No transfer data available")
+
+                    else:
+                        st.info("No transfer data available yet this season.")
+
+                except Exception as e:
+                    st.error(f"Error creating transfer statistics: {str(e)}")
+            else:
+                st.info("No transfer data available. This could be because:")
+                st.markdown("""
+                - The season hasn't started yet
+                - No managers have made any transfers
+                - Transfer data is still loading
+
+                **Note**: Transfer data will be automatically loaded when you refresh the data or when transfers are made during the season.
+                """)
+
+        with tab8:
             st.subheader("Chip Usage History")
 
             # Auto-load Chip History data if not already loaded or if data was refreshed
@@ -2507,7 +2970,7 @@ def main():
             else:
                 st.info("Chip data is loading...")
 
-        with tab8:
+        with tab9:
             st.subheader("Fun Statistics by Gameweek")
 
             # Auto-load Fun Stats data if not already loaded or if data was refreshed
