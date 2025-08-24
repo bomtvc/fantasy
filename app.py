@@ -173,6 +173,8 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                     css_class = "captain-cell"
                 elif 'Bench' in col:
                     css_class = "bench-cell"
+                elif 'Transfer' in col:
+                    css_class = "transfer-cell"
 
             # Format value and create hyperlink for GW Points
             if pd.isna(value):
@@ -203,15 +205,23 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                         formatted_transfers = []
                         for transfer in transfers:
                             if ' - ' in transfer:
-                                player_in, player_out = transfer.split(' - ', 1)
-                                formatted_transfer = f'<span style="color: #4caf50; font-weight: bold;">{player_in}</span> - <span style="color: #f44336; font-weight: bold;">{player_out}</span>'
+                                # Parse player_in (points) - player_out (points) format
+                                parts = transfer.split(' - ', 1)
+                                player_in_part = parts[0]
+                                player_out_part = parts[1]
+
+                                formatted_transfer = f'<span style="color: #4caf50; font-weight: bold;">{player_in_part}</span> - <span style="color: #f44336; font-weight: bold;">{player_out_part}</span>'
                                 formatted_transfers.append(formatted_transfer)
                             else:
                                 formatted_transfers.append(transfer)
                         display_value = '<br>'.join(formatted_transfers)
                     elif ' - ' in transfer_text:
-                        player_in, player_out = transfer_text.split(' - ', 1)
-                        display_value = f'<span style="color: #4caf50; font-weight: bold;">{player_in}</span> - <span style="color: #f44336; font-weight: bold;">{player_out}</span>'
+                        # Parse player_in (points) - player_out (points) format
+                        parts = transfer_text.split(' - ', 1)
+                        player_in_part = parts[0]
+                        player_out_part = parts[1]
+
+                        display_value = f'<span style="color: #4caf50; font-weight: bold;">{player_in_part}</span> - <span style="color: #f44336; font-weight: bold;">{player_out_part}</span>'
                     else:
                         display_value = transfer_text
                 # Handle chip display with icons and colors
@@ -278,6 +288,10 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                             display_value = f'<span style="padding: 4px 8px; border-radius: 8px; background-color: {chip_config["color"]}; color: white; font-size: 11px; font-weight: bold;">{chip_config["text"]}</span>'
                     else:
                         display_value = f'<span style="padding: 4px 8px; border-radius: 8px; background-color: #607d8b; color: white; font-size: 11px; font-weight: bold;">🎲 {chip_name.upper()}</span>'
+                # Handle fun stats transfer display with HTML colors
+                elif table_type == "fun_stats" and 'Transfer' in col and str(value) != '-':
+                    # Value already contains HTML formatting from the function
+                    display_value = str(value)
                 else:
                     display_value = str(value)
 
@@ -533,8 +547,12 @@ def build_transfer_history_table(entries_df: pd.DataFrame, bootstrap_df: pd.Data
                         player_in_name = player_mapping.get(element_in, f"Player_{element_in}") if element_in else "Unknown"
                         player_out_name = player_mapping.get(element_out, f"Player_{element_out}") if element_out else "Unknown"
 
-                        # Create transfer string with colors
-                        transfer_text = f"{player_in_name} - {player_out_name}"
+                        # Get player points for the transfer GW
+                        player_in_points = get_player_gw_points(element_in, event) if element_in and event else 0
+                        player_out_points = get_player_gw_points(element_out, event) if element_out and event else 0
+
+                        # Create transfer string with points
+                        transfer_text = f"{player_in_name} ({player_in_points}) - {player_out_name} ({player_out_points})"
 
                         results.append({
                             'Team_ID': team_id,
@@ -543,7 +561,9 @@ def build_transfer_history_table(entries_df: pd.DataFrame, bootstrap_df: pd.Data
                             'GW': event,
                             'Transfer': transfer_text,
                             'Player_In': player_in_name,
-                            'Player_Out': player_out_name
+                            'Player_Out': player_out_name,
+                            'Player_In_Points': player_in_points,
+                            'Player_Out_Points': player_out_points
                         })
                 else:
                     # Add empty entry if no transfers
@@ -560,7 +580,7 @@ def build_transfer_history_table(entries_df: pd.DataFrame, bootstrap_df: pd.Data
 
     if not results:
         # Return empty dataframe with proper columns if no transfers found
-        return pd.DataFrame(columns=['Team_ID', 'Manager', 'Team', 'GW', 'Transfer', 'Player_In', 'Player_Out'])
+        return pd.DataFrame(columns=['Team_ID', 'Manager', 'Team', 'GW', 'Transfer', 'Player_In', 'Player_Out', 'Player_In_Points', 'Player_Out_Points'])
 
     return pd.DataFrame(results)
 
@@ -634,7 +654,7 @@ def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_
 def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstrap_df: pd.DataFrame,
                          max_entries: Optional[int] = None) -> pd.DataFrame:
     """
-    Build fun statistics table showing best/worst captains and best bench for each GW
+    Build fun statistics table showing best/worst captains, best bench, and best/worst transfers for each GW
     """
     if max_entries:
         entries_df = entries_df.head(max_entries)
@@ -702,6 +722,33 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
                                 player_points = get_player_gw_points(element_id, gw)
                                 bench_total_points += player_points
 
+                        # Get transfer data for this GW
+                        transfer_diff = None  # None means no transfers made
+                        try:
+                            transfer_data = get_entry_transfers(team_id)
+                            if transfer_data and isinstance(transfer_data, list):
+                                gw_transfers = [t for t in transfer_data if t.get('event') == gw]
+
+                                if gw_transfers:  # Only calculate if there are transfers
+                                    total_in_points = 0
+                                    total_out_points = 0
+
+                                    for transfer in gw_transfers:
+                                        element_in = transfer.get('element_in')
+                                        element_out = transfer.get('element_out')
+
+                                        if element_in:
+                                            in_points = get_player_gw_points(element_in, gw)
+                                            total_in_points += in_points
+
+                                        if element_out:
+                                            out_points = get_player_gw_points(element_out, gw)
+                                            total_out_points += out_points
+
+                                    transfer_diff = total_in_points - total_out_points
+                        except:
+                            transfer_diff = None
+
                         gw_data.append({
                             'team_id': team_id,
                             'manager': manager,
@@ -709,10 +756,11 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
                             'captain_element': captain_element,
                             'captain_name': captain_name,
                             'captain_points': captain_points,
-                            'bench_total_points': bench_total_points
+                            'bench_total_points': bench_total_points,
+                            'transfer_diff': transfer_diff
                         })
 
-                except Exception as e:
+                except Exception:
                     # Add empty data for failed requests
                     gw_data.append({
                         'team_id': team_id,
@@ -721,7 +769,8 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
                         'captain_element': None,
                         'captain_name': "Unknown",
                         'captain_points': 0,
-                        'bench_total_points': 0
+                        'bench_total_points': 0,
+                        'transfer_diff': None  # No transfers for failed requests
                     })
 
                 # Small delay to avoid rate limit
@@ -734,21 +783,61 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
             min_captain_points = min(gw_data, key=lambda x: x['captain_points'])['captain_points']
             max_bench_points = max(gw_data, key=lambda x: x['bench_total_points'])['bench_total_points']
 
+            # Find best and worst transfers (only for managers who made transfers)
+            transfer_data = [x for x in gw_data if x['transfer_diff'] is not None]
+
+            if transfer_data:  # Only calculate if there are transfers
+                max_transfer_diff = max(transfer_data, key=lambda x: x['transfer_diff'])['transfer_diff']
+                min_transfer_diff = min(transfer_data, key=lambda x: x['transfer_diff'])['transfer_diff']
+            else:
+                max_transfer_diff = None
+                min_transfer_diff = None
+
             # Get all managers with max/min scores
             best_captains = [x for x in gw_data if x['captain_points'] == max_captain_points]
             worst_captains = [x for x in gw_data if x['captain_points'] == min_captain_points]
             best_benches = [x for x in gw_data if x['bench_total_points'] == max_bench_points]
+
+            # Get best/worst transfers only from managers who made transfers
+            if transfer_data and max_transfer_diff is not None and min_transfer_diff is not None:
+                best_transfers = [x for x in transfer_data if x['transfer_diff'] == max_transfer_diff]
+                worst_transfers = [x for x in transfer_data if x['transfer_diff'] == min_transfer_diff]
+            else:
+                best_transfers = []
+                worst_transfers = []
 
             # Format display strings
             best_captain_str = " | ".join([f"{x['manager']} - {x['captain_name']} ({x['captain_points']})" for x in best_captains])
             worst_captain_str = " | ".join([f"{x['manager']} - {x['captain_name']} ({x['captain_points']})" for x in worst_captains])
             best_bench_str = " | ".join([f"{x['manager']} ({x['bench_total_points']})" for x in best_benches])
 
+            # Format transfer strings with colors
+            def format_transfer_diff(diff):
+                if diff > 0:
+                    return f'<span style="color: #4caf50; font-weight: bold;">(+{diff})</span>'
+                elif diff < 0:
+                    return f'<span style="color: #f44336; font-weight: bold;">({diff})</span>'
+                else:
+                    return f'({diff})'
+
+            # Format transfer strings (only if there are transfers)
+            if best_transfers:
+                best_transfer_str = " | ".join([f"{x['manager']} {format_transfer_diff(x['transfer_diff'])}" for x in best_transfers])
+            else:
+                best_transfer_str = "-"
+
+            if worst_transfers:
+                worst_transfer_str = " | ".join([f"{x['manager']} {format_transfer_diff(x['transfer_diff'])}" for x in worst_transfers])
+            else:
+                worst_transfer_str = "-"
+
             results.append({
                 'GW': f"GW {gw}",
                 'Best_Captain': best_captain_str,
                 'Worst_Captain': worst_captain_str,
-                'Best_Bench': best_bench_str
+                'Best_Bench': best_bench_str,
+                'Best_Transfer': best_transfer_str,
+                'Worst_Transfer': worst_transfer_str
             })
 
     progress_bar.empty()
@@ -3015,12 +3104,35 @@ def main():
                         best_captains = []
                         worst_captains = []
                         best_benches = []
+                        best_transfers = []
+                        worst_transfers = []
 
                         for _, row in fun_data.iterrows():
                             # Extract manager names (handle multiple managers separated by " | ")
                             best_cap_entries = row['Best_Captain'].split(' | ')
                             worst_cap_entries = row['Worst_Captain'].split(' | ')
                             best_bench_entries = row['Best_Bench'].split(' | ')
+
+                            # Handle transfer columns if they exist and are not "-"
+                            if 'Best_Transfer' in row and pd.notna(row['Best_Transfer']) and str(row['Best_Transfer']).strip() != '-':
+                                best_transfer_entries = row['Best_Transfer'].split(' | ')
+                                for entry in best_transfer_entries:
+                                    if entry.strip() != '-':  # Skip "-" entries
+                                        # Remove HTML tags and extract manager name
+                                        import re
+                                        clean_entry = re.sub(r'<[^>]+>', '', entry)
+                                        manager_name = clean_entry.split(' (')[0]
+                                        best_transfers.append(manager_name)
+
+                            if 'Worst_Transfer' in row and pd.notna(row['Worst_Transfer']) and str(row['Worst_Transfer']).strip() != '-':
+                                worst_transfer_entries = row['Worst_Transfer'].split(' | ')
+                                for entry in worst_transfer_entries:
+                                    if entry.strip() != '-':  # Skip "-" entries
+                                        # Remove HTML tags and extract manager name
+                                        import re
+                                        clean_entry = re.sub(r'<[^>]+>', '', entry)
+                                        manager_name = clean_entry.split(' (')[0]
+                                        worst_transfers.append(manager_name)
 
                             # Extract manager names from each entry
                             for entry in best_cap_entries:
@@ -3040,9 +3152,11 @@ def main():
                         best_cap_counts = Counter(best_captains)
                         worst_cap_counts = Counter(worst_captains)
                         best_bench_counts = Counter(best_benches)
+                        best_transfer_counts = Counter(best_transfers)
+                        worst_transfer_counts = Counter(worst_transfers)
 
                         # Display insights
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2, col3, col4, col5 = st.columns(5)
 
                         with col1:
                             st.markdown("#### 🏆 Captain King")
@@ -3074,6 +3188,26 @@ def main():
                                          managers_str,
                                          f"{max_count} times")
 
+                        with col4:
+                            st.markdown("#### 📈 Transfer Master")
+                            if best_transfer_counts:
+                                max_count = best_transfer_counts.most_common(1)[0][1]
+                                transfer_managers = [manager for manager, count in best_transfer_counts.items() if count == max_count]
+                                managers_str = " | ".join(transfer_managers)
+                                st.metric("Best Transfer Manager(s)",
+                                         managers_str,
+                                         f"{max_count} times")
+
+                        with col5:
+                            st.markdown("#### 📉 Transfer... Oops")
+                            if worst_transfer_counts:
+                                max_count = worst_transfer_counts.most_common(1)[0][1]
+                                worst_transfer_managers = [manager for manager, count in worst_transfer_counts.items() if count == max_count]
+                                managers_str = " | ".join(worst_transfer_managers)
+                                st.metric("Worst Transfer Manager(s)",
+                                         managers_str,
+                                         f"{max_count} times")
+
                         # Fun facts
                         st.markdown("#### 🎯 Fun Facts")
 
@@ -3081,8 +3215,10 @@ def main():
                         unique_best_captains = len(set(best_captains))
                         unique_worst_captains = len(set(worst_captains))
                         unique_best_benches = len(set(best_benches))
+                        unique_best_transfers = len(set(best_transfers))
+                        unique_worst_transfers = len(set(worst_transfers))
 
-                        fact_col1, fact_col2 = st.columns(2)
+                        fact_col1, fact_col2, fact_col3 = st.columns(3)
 
                         with fact_col1:
                             st.info(f"📈 {unique_best_captains}/{len(entries_df)} managers had best captain of the week")
@@ -3093,6 +3229,10 @@ def main():
                             if total_gws > 0:
                                 diversity_score = (unique_best_captains + unique_worst_captains + unique_best_benches) / (3 * total_gws) * 100
                                 st.info(f"🎲 Statistics diversity: {diversity_score:.1f}%")
+
+                        with fact_col3:
+                            st.info(f"📈 {unique_best_transfers}/{len(entries_df)} managers had best transfer of the week")
+                            st.info(f"📉 {unique_worst_transfers}/{len(entries_df)} managers had worst transfer of the week")
                     else:
                         st.info("No fun statistics data available yet.")
 
