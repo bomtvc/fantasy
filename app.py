@@ -4,11 +4,15 @@ import requests
 import time
 import base64
 import os
+import warnings
 from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import plotly.express as px
 import plotly.graph_objects as go
 import config
+
+# Suppress Streamlit threading warnings
+warnings.filterwarnings("ignore", message=".*ScriptRunContext.*")
 
 # Page configuration
 st.set_page_config(
@@ -180,6 +184,7 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
             if pd.isna(value):
                 display_value = "-"
             elif isinstance(value, (int, float)):
+                # Skip formatting for transfer columns as they are now strings
                 if col == 'Transfers' or 'Transfers' in col:
                     display_value = f"{int(value)}" if value != 0 else "-"
                 else:
@@ -292,6 +297,20 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                 elif table_type == "fun_stats" and 'Transfer' in col and str(value) != '-':
                     # Value already contains HTML formatting from the function
                     display_value = str(value)
+                # Handle new transfer format with cost: "2(-4)" or "1" or "-"
+                elif ('Transfers' in col and (table_type in ['gw', 'month']) and str(value) != '-'):
+                    transfer_text = str(value)
+                    if '(-' in transfer_text and ')' in transfer_text:
+                        # Format: "2(-4)" -> highlight the cost in red
+                        parts = transfer_text.split('(-')
+                        if len(parts) == 2:
+                            transfers = parts[0]
+                            cost = parts[1].replace(')', '')
+                            display_value = f'{transfers}<span style="color: #f44336; font-weight: bold;">(-{cost})</span>'
+                        else:
+                            display_value = transfer_text
+                    else:
+                        display_value = transfer_text
                 else:
                     display_value = str(value)
 
@@ -471,6 +490,19 @@ def get_entry_gw_picks(entry_id: int, gw: int) -> Optional[Dict]:
         return None
 
 @st.cache_data(ttl=config.API_CACHE_TTL)
+def get_entry_history(entry_id: int) -> Optional[Dict]:
+    """
+    Get complete entry history for all gameweeks - optimized single API call
+    """
+    try:
+        url = f"https://fantasy.premierleague.com/api/entry/{entry_id}/history/"
+        data = fetch_json(url)
+        return data
+    except Exception as e:
+        show_temporary_message(f"Unable to fetch history data for entry {entry_id}: {str(e)}", "warning")
+        return None
+
+@st.cache_data(ttl=config.API_CACHE_TTL)
 def get_entry_transfers(entry_id: int) -> Optional[Dict]:
     """
     Get transfer history for a specific entry
@@ -584,6 +616,39 @@ def build_transfer_history_table(entries_df: pd.DataFrame, bootstrap_df: pd.Data
 
     return pd.DataFrame(results)
 
+def get_entry_chips_optimized(entry_id: int, gw_range: List[int]) -> Dict[int, str]:
+    """
+    Get chip usage for an entry across multiple GWs with minimal API calls
+    """
+    chips = {}
+
+    # Try to get chip info from history first (if available in future API updates)
+    try:
+        history_data = get_entry_history(entry_id)
+        if history_data and 'chips' in history_data:
+            for chip in history_data['chips']:
+                event = chip.get('event')
+                chip_name = chip.get('name')
+                if event in gw_range:
+                    chips[event] = chip_name
+    except:
+        pass
+
+    # For missing chip data, we still need to check picks API for active chips
+    # But we'll batch this more efficiently
+    missing_gws = [gw for gw in gw_range if gw not in chips]
+
+    for gw in missing_gws:
+        try:
+            data = get_entry_gw_picks(entry_id, gw)
+            active_chip = data.get('active_chip') if data else None
+            chips[gw] = active_chip if active_chip else '-'
+            time.sleep(config.REQUEST_DELAY / 4)  # Reduced delay
+        except:
+            chips[gw] = '-'
+
+    return chips
+
 def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
     """
     Build chip history table for all entries showing which chips were used in each GW
@@ -592,24 +657,23 @@ def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_
         entries_df = entries_df.head(max_entries)
 
     results = []
-    total_requests = len(entries_df) * len(gw_range)
+    total_requests = len(entries_df)
 
     # Progress bar
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
-        # Submit all tasks
+        # Submit all tasks - one per entry instead of per entry per GW
         future_to_info = {}
         for _, entry in entries_df.iterrows():
-            for gw in gw_range:
-                future = executor.submit(get_entry_gw_picks, entry['Team_ID'], gw)
-                future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'], gw)
+            future = executor.submit(get_entry_chips_optimized, entry['Team_ID'], gw_range)
+            future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'])
 
         # Collect results
         completed = 0
         for future in as_completed(future_to_info):
-            team_id, manager, team, gw = future_to_info[future]
+            team_id, manager, team = future_to_info[future]
             completed += 1
 
             # Update progress
@@ -618,27 +682,26 @@ def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int], max_
             status_text.text(f"Fetching chip data: {completed}/{total_requests} ({progress:.1%})")
 
             try:
-                data = future.result()
-                active_chip = None
-                if data:
-                    active_chip = data.get('active_chip')
-
-                results.append({
-                    'Team_ID': team_id,
-                    'Manager': manager,
-                    'Team': team,
-                    'GW': gw,
-                    'Active_Chip': active_chip if active_chip else '-'
-                })
+                chips_data = future.result()
+                for gw in gw_range:
+                    active_chip = chips_data.get(gw, '-')
+                    results.append({
+                        'Team_ID': team_id,
+                        'Manager': manager,
+                        'Team': team,
+                        'GW': gw,
+                        'Active_Chip': active_chip
+                    })
             except Exception as e:
-                show_temporary_message(f"Error processing entry {team_id}, GW {gw}: {str(e)}", "warning")
-                results.append({
-                    'Team_ID': team_id,
-                    'Manager': manager,
-                    'Team': team,
-                    'GW': gw,
-                    'Active_Chip': '-'
-                })
+                show_temporary_message(f"Error processing entry {team_id}: {str(e)}", "warning")
+                for gw in gw_range:
+                    results.append({
+                        'Team_ID': team_id,
+                        'Manager': manager,
+                        'Team': team,
+                        'GW': gw,
+                        'Active_Chip': '-'
+                    })
 
             # Small delay to avoid rate limit
             time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
@@ -655,6 +718,7 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
                          max_entries: Optional[int] = None) -> pd.DataFrame:
     """
     Build fun statistics table showing best/worst captains, best bench, and best/worst transfers for each GW
+    Uses optimized approach with history API for bench points
     """
     if max_entries:
         entries_df = entries_df.head(max_entries)
@@ -664,7 +728,7 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
     # Only process GWs that have finished (have results)
     completed_gws = [gw for gw in gw_range if gw <= max(gw_range)]
 
-    total_requests = len(entries_df) * len(completed_gws)
+    total_requests = len(entries_df)
 
     # Progress bar
     progress_bar = st.progress(0)
@@ -673,7 +737,31 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
     # Create player name mapping
     player_mapping = dict(zip(bootstrap_df['id'], bootstrap_df['web_name']))
 
-    for gw in completed_gws:
+    # First, get history data for all entries to get bench points
+    history_data = {}
+    with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
+        future_to_entry = {}
+        for _, entry in entries_df.iterrows():
+            future = executor.submit(get_entry_history, entry['Team_ID'])
+            future_to_entry[future] = entry['Team_ID']
+
+        completed = 0
+        for future in as_completed(future_to_entry):
+            entry_id = future_to_entry[future]
+            completed += 1
+            progress_bar.progress(completed / total_requests * 0.3)  # 30% for history data
+            status_text.text(f"Fetching history data: {completed}/{total_requests}")
+
+            try:
+                data = future.result()
+                if data:
+                    history_data[entry_id] = data
+            except:
+                history_data[entry_id] = None
+
+            time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
+
+    for gw_idx, gw in enumerate(completed_gws):
         status_text.text(f"Processing GW {gw}...")
 
         gw_data = []
@@ -691,12 +779,21 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
                 team_id, manager, team = future_to_info[future]
                 completed += 1
 
-                # Update progress
-                progress = (completed + (gw - 1) * len(entries_df)) / total_requests
+                # Update progress (30% for history + 70% for picks processing)
+                progress = 0.3 + (0.7 * (completed + gw_idx * len(entries_df)) / (len(entries_df) * len(completed_gws)))
                 progress_bar.progress(progress)
 
                 try:
                     data = future.result()
+
+                    # Get bench points from history data (more efficient)
+                    bench_total_points = 0
+                    if team_id in history_data and history_data[team_id]:
+                        for event in history_data[team_id].get('current', []):
+                            if event.get('event') == gw:
+                                bench_total_points = event.get('points_on_bench', 0)
+                                break
+
                     if data and 'picks' in data:
                         picks = data['picks']
 
@@ -711,16 +808,6 @@ def build_fun_stats_table(entries_df: pd.DataFrame, gw_range: List[int], bootstr
                             captain_name = player_mapping.get(captain_element, f"Player_{captain_element}")
                             # Captain points are doubled
                             captain_points *= captain_pick.get('multiplier', 1)
-
-                        # Find bench players (positions 12, 13, 14, 15)
-                        bench_picks = [p for p in picks if p.get('position', 0) in [12, 13, 14, 15]]
-                        bench_total_points = 0
-
-                        for bench_pick in bench_picks:
-                            element_id = bench_pick.get('element')
-                            if element_id:
-                                player_points = get_player_gw_points(element_id, gw)
-                                bench_total_points += player_points
 
                         # Get transfer data for this GW
                         transfer_diff = None  # None means no transfers made
@@ -871,32 +958,31 @@ def parse_month_mapping(mapping_str: str) -> Dict[int, int]:
 
     return gw_to_month
 
-def build_gw_points_table(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
+def build_gw_points_table_optimized(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
     """
-    Build gameweek points table for all entries
+    Build gameweek points table for all entries using optimized history API
     """
     if max_entries:
         entries_df = entries_df.head(max_entries)
 
     results = []
-    total_requests = len(entries_df) * len(gw_range)
+    total_requests = len(entries_df)
 
     # Progress bar
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
-        # Submit all tasks
+        # Submit all tasks - one per entry instead of per entry per GW
         future_to_info = {}
         for _, entry in entries_df.iterrows():
-            for gw in gw_range:
-                future = executor.submit(get_entry_gw_picks, entry['Team_ID'], gw)
-                future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'], gw)
+            future = executor.submit(get_entry_history, entry['Team_ID'])
+            future_to_info[future] = (entry['Team_ID'], entry['Manager'], entry['Team'])
 
         # Collect results
         completed = 0
         for future in as_completed(future_to_info):
-            team_id, manager, team, gw = future_to_info[future]
+            team_id, manager, team = future_to_info[future]
             completed += 1
 
             # Update progress
@@ -906,20 +992,59 @@ def build_gw_points_table(entries_df: pd.DataFrame, gw_range: List[int], max_ent
 
             try:
                 data = future.result()
-                if data and 'entry_history' in data:
-                    history = data['entry_history']
-                    results.append({
-                        'Team_ID': team_id,
-                        'Manager': manager,
-                        'Team': team,
-                        'GW': gw,
-                        'Points': history.get('points', 0),
-                        'Total_Points': history.get('total_points', 0),
-                        'Transfers': history.get('event_transfers', 0),
-                        'picks': data.get('picks', [])
-                    })
+                if data and 'current' in data:
+                    # Process all gameweeks for this entry
+                    for event in data['current']:
+                        gw = event.get('event')
+                        if gw in gw_range:
+                            results.append({
+                                'Team_ID': team_id,
+                                'Manager': manager,
+                                'Team': team,
+                                'GW': gw,
+                                'Points': event.get('points', 0),
+                                'Total_Points': event.get('total_points', 0),
+                                'Transfers': event.get('event_transfers', 0),
+                                'Transfer_Cost': event.get('event_transfers_cost', 0),
+                                'Bench_Points': event.get('points_on_bench', 0),
+                                'picks': []  # Will be empty since we're not fetching picks
+                            })
+
+                    # Add missing GWs with default values
+                    existing_gws = {event.get('event') for event in data['current']}
+                    for gw in gw_range:
+                        if gw not in existing_gws:
+                            results.append({
+                                'Team_ID': team_id,
+                                'Manager': manager,
+                                'Team': team,
+                                'GW': gw,
+                                'Points': 0,
+                                'Total_Points': 0,
+                                'Transfers': 0,
+                                'Transfer_Cost': 0,
+                                'Bench_Points': 0,
+                                'picks': []
+                            })
                 else:
-                    # Add row with default values if no data
+                    # Add rows with default values if no data
+                    for gw in gw_range:
+                        results.append({
+                            'Team_ID': team_id,
+                            'Manager': manager,
+                            'Team': team,
+                            'GW': gw,
+                            'Points': 0,
+                            'Total_Points': 0,
+                            'Transfers': 0,
+                            'Transfer_Cost': 0,
+                            'Bench_Points': 0,
+                            'picks': []
+                        })
+            except Exception as e:
+                show_temporary_message(f"Error processing entry {team_id}: {str(e)}", "warning")
+                # Add default values for all GWs for this entry
+                for gw in gw_range:
                     results.append({
                         'Team_ID': team_id,
                         'Manager': manager,
@@ -928,11 +1053,10 @@ def build_gw_points_table(entries_df: pd.DataFrame, gw_range: List[int], max_ent
                         'Points': 0,
                         'Total_Points': 0,
                         'Transfers': 0,
+                        'Transfer_Cost': 0,
+                        'Bench_Points': 0,
                         'picks': []
                     })
-            except Exception as e:
-                show_temporary_message(f"Error processing entry {team_id}, GW {gw}: {str(e)}", "warning")
-                continue
 
             # Small delay to avoid rate limit
             time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
@@ -944,6 +1068,12 @@ def build_gw_points_table(entries_df: pd.DataFrame, gw_range: List[int], max_ent
         raise FPLError("Unable to fetch points data for any entry")
 
     return pd.DataFrame(results)
+
+def build_gw_points_table(entries_df: pd.DataFrame, gw_range: List[int], max_entries: Optional[int] = None) -> pd.DataFrame:
+    """
+    Build gameweek points table for all entries - now uses optimized version
+    """
+    return build_gw_points_table_optimized(entries_df, gw_range, max_entries)
 
 def build_month_points_table(gw_points_df: pd.DataFrame, month_mapping: Dict[int, int]) -> pd.DataFrame:
     """
@@ -972,10 +1102,11 @@ def build_month_points_table(gw_points_df: pd.DataFrame, month_mapping: Dict[int
     if month_df.empty:
         return pd.DataFrame(columns=['Team_ID', 'Manager', 'Team', 'Total'])
 
-    # Group by entry and month, sum points
+    # Group by entry and month, sum points and transfer costs
     month_summary = month_df.groupby(['Team_ID', 'Manager', 'Team', 'Month']).agg({
         'Points': 'sum',
-        'Transfers': 'sum'
+        'Transfers': 'sum',
+        'Transfer_Cost': 'sum'
     }).reset_index()
 
     # Pivot to have column for each month
@@ -986,12 +1117,22 @@ def build_month_points_table(gw_points_df: pd.DataFrame, month_mapping: Dict[int
         fill_value=0
     )
 
+    pivot_transfer_costs = month_summary.pivot_table(
+        index=['Team_ID', 'Manager', 'Team'],
+        columns='Month',
+        values='Transfer_Cost',
+        fill_value=0
+    )
+
     # Create column names for months
     month_cols = [f"Month_{int(col)}" for col in pivot_points.columns]
     pivot_points.columns = month_cols
+    pivot_transfer_costs.columns = month_cols
 
-    # Add total column
-    pivot_points['Total'] = pivot_points.sum(axis=1)
+    # Add total column: Total = Sum(Points) - Sum(Transfer_Cost)
+    total_points = pivot_points.sum(axis=1)
+    total_transfer_costs = pivot_transfer_costs.sum(axis=1)
+    pivot_points['Total'] = total_points - total_transfer_costs
 
     # Reset index for export
     result = pivot_points.reset_index()
@@ -1012,10 +1153,11 @@ def build_month_points_table_full(gw_points_df: pd.DataFrame, month_mapping: Dic
     if month_df.empty:
         return pd.DataFrame(columns=['Team_ID', 'Manager', 'Team', 'Total'])
 
-    # Group by entry and month, sum points (including 0 points)
+    # Group by entry and month, sum points and transfer costs (including 0 points)
     month_summary = month_df.groupby(['Team_ID', 'Manager', 'Team', 'Month']).agg({
         'Points': 'sum',
-        'Transfers': 'sum'
+        'Transfers': 'sum',
+        'Transfer_Cost': 'sum'
     }).reset_index()
 
     # Pivot to have column for each month
@@ -1026,22 +1168,91 @@ def build_month_points_table_full(gw_points_df: pd.DataFrame, month_mapping: Dic
         fill_value=0
     )
 
+    pivot_transfers = month_summary.pivot_table(
+        index=['Team_ID', 'Manager', 'Team'],
+        columns='Month',
+        values='Transfers',
+        fill_value=0
+    )
+
+    pivot_transfer_costs = month_summary.pivot_table(
+        index=['Team_ID', 'Manager', 'Team'],
+        columns='Month',
+        values='Transfer_Cost',
+        fill_value=0
+    )
+
     # Create column names for months
     month_cols = [f"Month_{int(col)}" for col in pivot_points.columns]
     pivot_points.columns = month_cols
+    pivot_transfers.columns = month_cols
+    pivot_transfer_costs.columns = month_cols
 
-    # Add total column
-    pivot_points['Total'] = pivot_points.sum(axis=1)
+    # Reset index for all pivots
+    points_df = pivot_points.reset_index()
+    transfers_df = pivot_transfers.reset_index()
+    transfer_costs_df = pivot_transfer_costs.reset_index()
 
-    # Reset index for export
-    result = pivot_points.reset_index()
+    # Merge all dataframes
+    result = points_df.copy()
+
+    # Add transfer data
+    for month_col in month_cols:
+        # Get transfer and cost data for this month
+        transfer_data = transfers_df[['Team_ID', 'Manager', 'Team', month_col]]
+        cost_data = transfer_costs_df[['Team_ID', 'Manager', 'Team', month_col]]
+
+        # Merge transfer data
+        result = result.merge(
+            transfer_data.rename(columns={month_col: f"{month_col}_transfers_raw"}),
+            on=['Team_ID', 'Manager', 'Team'],
+            how='left'
+        )
+
+        # Merge cost data
+        result = result.merge(
+            cost_data.rename(columns={month_col: f"{month_col}_costs_raw"}),
+            on=['Team_ID', 'Manager', 'Team'],
+            how='left'
+        )
+
+        # Create formatted transfer column
+        transfer_col = f"{month_col}_Transfers"
+        transfers_raw_col = f"{month_col}_transfers_raw"
+        costs_raw_col = f"{month_col}_costs_raw"
+
+        def format_month_transfer(row):
+            transfers = int(row[transfers_raw_col]) if pd.notna(row[transfers_raw_col]) else 0
+            cost = int(row[costs_raw_col]) if pd.notna(row[costs_raw_col]) else 0
+            if transfers == 0:
+                return "-"
+            elif cost == 0:
+                return str(transfers)
+            else:
+                return f"{transfers}(-{cost})"
+
+        result[transfer_col] = result.apply(format_month_transfer, axis=1)
+
+        # Remove the raw columns
+        result = result.drop(columns=[transfers_raw_col, costs_raw_col])
+
+    # Add total column: Total = Sum(Points) - Sum(Transfer_Cost)
+    total_points = points_df[month_cols].sum(axis=1)
+    total_transfer_costs = transfer_costs_df[month_cols].sum(axis=1)
+    result['Total'] = total_points - total_transfer_costs
 
     # Add Rank column based on Total points (descending)
     result = result.sort_values('Total', ascending=False)
     result['Rank'] = range(1, len(result) + 1)
 
-    # Reorder columns to have Rank first
-    cols = ['Rank', 'Team_ID', 'Manager', 'Team'] + [col for col in result.columns if col.startswith('Month_')] + ['Total']
+    # Reorder columns to have Rank first, then interleave Month_X and Month_X_Transfers
+    cols = ['Rank', 'Team_ID', 'Manager', 'Team']
+    for month_col in sorted([col for col in result.columns if col.startswith('Month_') and not col.endswith('_Transfers')]):
+        cols.append(month_col)
+        transfer_col = f"{month_col}_Transfers"
+        if transfer_col in result.columns:
+            cols.append(transfer_col)
+    cols.append('Total')
     result = result[cols]
 
     return result
@@ -1049,25 +1260,56 @@ def build_month_points_table_full(gw_points_df: pd.DataFrame, month_mapping: Dic
 def compute_top_picks(entries_df: pd.DataFrame, gw_range: List[int], bootstrap_df: pd.DataFrame,
                      max_entries: Optional[int] = None, top_n: int = 5) -> pd.DataFrame:
     """
-    Calculate top N most picked players
+    Calculate top N most picked players using optimized approach
+    Note: This function requires picks data, so it still needs to call picks API
     """
     if max_entries:
         entries_df = entries_df.head(max_entries)
 
-    # Get picks data from GW points table
-    gw_data = build_gw_points_table(entries_df, gw_range, max_entries)
-
     # Count picks for each player
     player_counts = {}
     total_entries = len(entries_df)
+    total_requests = len(entries_df) * len(gw_range)
 
-    for _, row in gw_data.iterrows():
-        picks = row['picks']
-        if picks:
-            for pick in picks:
-                element_id = pick.get('element')
-                if element_id:
-                    player_counts[element_id] = player_counts.get(element_id, 0) + 1
+    # Progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
+        # Submit all tasks
+        future_to_info = {}
+        for _, entry in entries_df.iterrows():
+            for gw in gw_range:
+                future = executor.submit(get_entry_gw_picks, entry['Team_ID'], gw)
+                future_to_info[future] = (entry['Team_ID'], gw)
+
+        # Collect results
+        completed = 0
+        for future in as_completed(future_to_info):
+            _, gw = future_to_info[future]
+            completed += 1
+
+            # Update progress
+            progress = completed / total_requests
+            progress_bar.progress(progress)
+            status_text.text(f"Analyzing picks: {completed}/{total_requests} ({progress:.1%})")
+
+            try:
+                data = future.result()
+                if data and 'picks' in data:
+                    picks = data['picks']
+                    for pick in picks:
+                        element_id = pick.get('element')
+                        if element_id:
+                            player_counts[element_id] = player_counts.get(element_id, 0) + 1
+            except:
+                continue
+
+            # Small delay to avoid rate limit
+            time.sleep(config.REQUEST_DELAY / config.MAX_WORKERS)
+
+    progress_bar.empty()
+    status_text.empty()
 
     # Convert to DataFrame and merge with bootstrap data
     if not player_counts:
@@ -1135,50 +1377,39 @@ def get_current_month(gw: int, month_mapping: Dict[int, int]) -> int:
 @st.cache_data(ttl=config.API_CACHE_TTL)
 def get_current_gameweek_range(entries_df: pd.DataFrame) -> List[int]:
     """
-    Automatically determine the current gameweek range by checking which weeks have actual points
+    Automatically determine the current gameweek range using optimized history API
     Returns range from GW1 to the last week where at least one player has points > 0
     """
     if entries_df.empty:
         return [1]
 
-    max_gw_to_check = 38  # Maximum possible gameweeks in a season
     current_gw_end = 1
 
     # Sample a few entries to check for actual gameweek data
-    sample_entries = entries_df.head(min(5, len(entries_df)))
+    sample_entries = entries_df.head(min(3, len(entries_df)))
 
     with st.spinner("Determining current gameweek range..."):
-        for gw in range(1, max_gw_to_check + 1):
-            has_points = False
+        max_gw_found = 1
 
-            # Check if any of the sample entries have points > 0 for this GW
-            for _, entry in sample_entries.iterrows():
-                try:
-                    data = get_entry_gw_picks(entry['Team_ID'], gw)
-                    if data and 'entry_history' in data:
-                        points = data['entry_history'].get('points', 0)
-                        if points > 0:
-                            has_points = True
-                            break
-                except:
-                    continue
+        for _, entry in sample_entries.iterrows():
+            try:
+                data = get_entry_history(entry['Team_ID'])
+                if data and 'current' in data:
+                    # Find the highest GW with points > 0
+                    for event in data['current']:
+                        gw = event.get('event', 0)
+                        points = event.get('points', 0)
+                        if points > 0 and gw > max_gw_found:
+                            max_gw_found = gw
 
-            if has_points:
-                current_gw_end = gw
-            else:
-                # If no points found for this GW, we've likely reached the current week
-                # Check one more GW to be sure
-                if gw > current_gw_end:
-                    break
+                # Small delay to avoid rate limiting
+                time.sleep(config.REQUEST_DELAY)
+            except:
+                continue
 
-            # Small delay to avoid rate limiting
-            time.sleep(config.REQUEST_DELAY / 2)
+        current_gw_end = max_gw_found
 
     gw_range = list(range(1, current_gw_end + 1))
-    # Create temporary message that will be cleared by subsequent operations
-    # status_placeholder = st.empty()
-    # status_placeholder.success(f"Auto-detected gameweek range: GW1 to GW{current_gw_end}")
-
     return gw_range
 
 def create_ranking_table(data_df: pd.DataFrame, score_column: str, has_transfers: bool = False) -> pd.DataFrame:
@@ -1252,19 +1483,42 @@ def build_weekly_ranking(gw_points_df: pd.DataFrame, selected_gw: int) -> pd.Dat
     gw_data = gw_points_df[gw_points_df['GW'] == selected_gw].copy()
 
     if gw_data.empty:
-        return pd.DataFrame(columns=['Medal', 'Rank', 'Manager', 'Team', 'Points', 'Transfers'])
+        return pd.DataFrame(columns=['Medal', 'Rank', 'Manager', 'Team', 'Points', 'Transfers', 'NPOINTS'])
 
     # Filter out unplayed weeks (points = 0)
     gw_data = gw_data[gw_data['Points'] > 0]
 
     if gw_data.empty:
-        return pd.DataFrame(columns=['Medal', 'Rank', 'Manager', 'Team', 'Points', 'Transfers'])
+        return pd.DataFrame(columns=['Medal', 'Rank', 'Manager', 'Team', 'Points', 'Transfers', 'NPOINTS'])
 
-    # Select relevant columns
-    ranking_data = gw_data[['Manager', 'Team', 'Points', 'Transfers']].copy()
+    # Select relevant columns and add Transfer_Cost if available
+    if 'Transfer_Cost' in gw_data.columns:
+        ranking_data = gw_data[['Manager', 'Team', 'Points', 'Transfers', 'Transfer_Cost']].copy()
+    else:
+        ranking_data = gw_data[['Manager', 'Team', 'Points', 'Transfers']].copy()
+        ranking_data['Transfer_Cost'] = 0
 
-    # Create ranking table with transfer consideration
-    ranked_df = create_ranking_table(ranking_data, 'Points', has_transfers=True)
+    # Format Transfers column: transfers(-cost)
+    def format_transfer(row):
+        transfers = int(row['Transfers'])
+        cost = int(row['Transfer_Cost'])
+        if transfers == 0:
+            return "-"
+        elif cost == 0:
+            return str(transfers)
+        else:
+            return f"{transfers}(-{cost})"
+
+    ranking_data['Transfers'] = ranking_data.apply(format_transfer, axis=1)
+
+    # Add NPOINTS column: Points - Transfer_Cost
+    ranking_data['NPOINTS'] = ranking_data['Points'] - ranking_data['Transfer_Cost']
+
+    # Remove Transfer_Cost column as it's now included in Transfers display
+    ranking_data = ranking_data.drop(columns=['Transfer_Cost'])
+
+    # Create ranking table with NPOINTS consideration
+    ranked_df = create_ranking_table(ranking_data, 'NPOINTS', has_transfers=False)
 
     return ranked_df
 
@@ -1295,17 +1549,43 @@ def build_monthly_ranking(gw_points_df: pd.DataFrame, month_mapping: Dict[int, i
     if month_data.empty:
         return pd.DataFrame(columns=['Medal', 'Rank', 'Manager', 'Team', 'Points', 'Transfers'])
 
-    # Group by team and sum points and transfers
-    monthly_summary = month_data.groupby(['Team_ID', 'Manager', 'Team']).agg({
+    # Group by team and sum points, transfers, and transfer costs
+    agg_dict = {
         'Points': 'sum',
         'Transfers': 'sum'
-    }).reset_index()
+    }
+
+    # Add Transfer_Cost if available
+    if 'Transfer_Cost' in month_data.columns:
+        agg_dict['Transfer_Cost'] = 'sum'
+
+    monthly_summary = month_data.groupby(['Team_ID', 'Manager', 'Team']).agg(agg_dict).reset_index()
+
+    # Add Transfer_Cost column if not present
+    if 'Transfer_Cost' not in monthly_summary.columns:
+        monthly_summary['Transfer_Cost'] = 0
+
+    # Format Transfers column: total_transfers(-total_cost)
+    def format_monthly_transfer(row):
+        transfers = int(row['Transfers'])
+        cost = int(row['Transfer_Cost'])
+        if transfers == 0:
+            return "-"
+        elif cost == 0:
+            return str(transfers)
+        else:
+            return f"{transfers}(-{cost})"
+
+    monthly_summary['Transfers'] = monthly_summary.apply(format_monthly_transfer, axis=1)
+
+    # Add NPOINTS column: Points - Transfer_Cost
+    monthly_summary['NPOINTS'] = monthly_summary['Points'] - monthly_summary['Transfer_Cost']
 
     # Select relevant columns for ranking
-    ranking_data = monthly_summary[['Manager', 'Team', 'Points', 'Transfers']].copy()
+    ranking_data = monthly_summary[['Manager', 'Team', 'Points', 'Transfers', 'NPOINTS']].copy()
 
-    # Create ranking table with transfer consideration
-    ranked_df = create_ranking_table(ranking_data, 'Points', has_transfers=True)
+    # Create ranking table with NPOINTS consideration
+    ranked_df = create_ranking_table(ranking_data, 'NPOINTS', has_transfers=False)
 
     return ranked_df
 
@@ -1329,17 +1609,43 @@ def build_monthly_ranking_full(gw_points_df: pd.DataFrame, month_mapping: Dict[i
     if month_data.empty:
         return pd.DataFrame(columns=['Medal', 'Rank', 'Manager', 'Team', 'Points', 'Transfers'])
 
-    # Group by team and sum points and transfers
-    monthly_summary = month_data.groupby(['Team_ID', 'Manager', 'Team']).agg({
+    # Group by team and sum points, transfers, and transfer costs
+    agg_dict = {
         'Points': 'sum',
         'Transfers': 'sum'
-    }).reset_index()
+    }
+
+    # Add Transfer_Cost if available
+    if 'Transfer_Cost' in month_data.columns:
+        agg_dict['Transfer_Cost'] = 'sum'
+
+    monthly_summary = month_data.groupby(['Team_ID', 'Manager', 'Team']).agg(agg_dict).reset_index()
+
+    # Add Transfer_Cost column if not present
+    if 'Transfer_Cost' not in monthly_summary.columns:
+        monthly_summary['Transfer_Cost'] = 0
+
+    # Format Transfers column: total_transfers(-total_cost)
+    def format_monthly_transfer(row):
+        transfers = int(row['Transfers'])
+        cost = int(row['Transfer_Cost'])
+        if transfers == 0:
+            return "-"
+        elif cost == 0:
+            return str(transfers)
+        else:
+            return f"{transfers}(-{cost})"
+
+    monthly_summary['Transfers'] = monthly_summary.apply(format_monthly_transfer, axis=1)
+
+    # Add NPOINTS column: Points - Transfer_Cost
+    monthly_summary['NPOINTS'] = monthly_summary['Points'] - monthly_summary['Transfer_Cost']
 
     # Select relevant columns for ranking
-    ranking_data = monthly_summary[['Manager', 'Team', 'Points', 'Transfers']].copy()
+    ranking_data = monthly_summary[['Manager', 'Team', 'Points', 'Transfers', 'NPOINTS']].copy()
 
-    # Create ranking table with transfer consideration
-    ranked_df = create_ranking_table(ranking_data, 'Points', has_transfers=True)
+    # Create ranking table with NPOINTS consideration
+    ranked_df = create_ranking_table(ranking_data, 'NPOINTS', has_transfers=False)
 
     return ranked_df
 
@@ -1492,6 +1798,8 @@ def create_download_button(df: pd.DataFrame, filename: str, button_text: str, ke
 def main():
     """
     Main function containing Streamlit UI
+    OPTIMIZED VERSION: Uses history API (https://fantasy.premierleague.com/api/entry/{entry_id}/history/)
+    to reduce API calls and improve performance
     """
     st.title("⚽ RSC Fantasy League")
     st.markdown("Fantasy Premier League League Data Analysis")
@@ -1908,7 +2216,7 @@ def main():
                         gw_points_df = build_gw_points_table(entries_df, gw_range, max_entries)
 
                     # Create pivot table for display with GW format
-                    # Separate pivot for points and transfers
+                    # Separate pivot for points, transfers, and transfer costs
                     points_pivot = gw_points_df.pivot_table(
                         index=['Manager', 'Team'],
                         columns='GW',
@@ -1923,19 +2231,58 @@ def main():
                         fill_value=0
                     )
 
+                    transfer_cost_pivot = gw_points_df.pivot_table(
+                        index=['Manager', 'Team'],
+                        columns='GW',
+                        values='Transfer_Cost',
+                        fill_value=0
+                    )
+
                     # Rename columns to GW1, GW2, etc.
                     points_pivot.columns = [f'GW{col}_Points' for col in points_pivot.columns]
                     transfers_pivot.columns = [f'GW{col}_Transfers' for col in transfers_pivot.columns]
-
-                    # Combine points and transfers
-                    combined_df = pd.concat([points_pivot, transfers_pivot], axis=1)
+                    transfer_cost_pivot.columns = [f'GW{col}_Transfer_Cost' for col in transfer_cost_pivot.columns]
 
                     # Reset index to get Manager and Team as columns
-                    combined_df = combined_df.reset_index()
+                    points_df = points_pivot.reset_index()
+                    transfers_df = transfers_pivot.reset_index()
+                    transfer_cost_df = transfer_cost_pivot.reset_index()
 
-                    # Add Total column (sum of all points columns)
+                    # Combine all dataframes
+                    combined_df = points_df.merge(transfers_df, on=['Manager', 'Team'])
+                    combined_df = combined_df.merge(transfer_cost_df, on=['Manager', 'Team'])
+
+                    # Format transfer columns to show transfers(-cost)
+                    for gw in sorted(gw_range):
+                        transfer_col = f'GW{gw}_Transfers'
+                        cost_col = f'GW{gw}_Transfer_Cost'
+
+                        # Create formatted transfer column
+                        def format_transfer(row):
+                            transfers = int(row[transfer_col])
+                            cost = int(row[cost_col])
+                            if transfers == 0:
+                                return "-"
+                            elif cost == 0:
+                                return str(transfers)
+                            else:
+                                return f"{transfers}(-{cost})"
+
+                        combined_df[transfer_col] = combined_df.apply(format_transfer, axis=1)
+
+                        # Remove the separate cost column as it's now included in transfer column
+                        combined_df = combined_df.drop(columns=[cost_col])
+
+                    # Add Total column with correct calculation: Total = Sum(Points) - Sum(Transfer_Cost)
                     points_cols = [f'GW{gw}_Points' for gw in sorted(gw_range)]
-                    combined_df['Total'] = combined_df[points_cols].sum(axis=1)
+                    transfer_cost_cols = [f'GW{gw}_Transfer_Cost' for gw in sorted(gw_range)]
+
+                    # Calculate total points and total transfer costs from original data
+                    total_points = points_df[points_cols].sum(axis=1)
+                    total_transfer_costs = transfer_cost_df[transfer_cost_cols].sum(axis=1)
+
+                    # TOTAL = Total Points - Total Transfer Costs
+                    combined_df['Total'] = total_points - total_transfer_costs
 
                     # Add Rank column based on Total points (descending)
                     combined_df = combined_df.sort_values('Total', ascending=False)
@@ -2425,9 +2772,10 @@ def main():
                                     manager = row['Manager']
                                     team = row['Team']
                                     points = row['Points']
+                                    npoints = row['NPOINTS']
                                     transfers = row['Transfers']
 
-                                    display_text = f"{medal} **{manager}** ({team}) - {points} points, {transfers} transfers"
+                                    display_text = f"{medal} **{manager}** ({team}) - {points} points, {transfers} transfers, {npoints} net points"
 
                                     if rank == 1:
                                         st.success(display_text)
@@ -2485,9 +2833,10 @@ def main():
                                     manager = row['Manager']
                                     team = row['Team']
                                     points = row['Points']
+                                    npoints = row['NPOINTS']
                                     transfers = row['Transfers']
 
-                                    display_text = f"{medal} **{manager}** ({team}) - {points} points, {transfers} transfers"
+                                    display_text = f"{medal} **{manager}** ({team}) - {points} points, {transfers} transfers, {npoints} net points"
 
                                     if rank == 1:
                                         st.success(display_text)
