@@ -126,12 +126,26 @@ Month2_Transfers: "1"     (1 transfer total, 0 cost)
 - **Logic mới**: Sử dụng NPOINTS để xác định winner thay vì Points
 - **Công bằng hơn**: Transfer cost được tính vào khi xác định winner
 - **Hiển thị**: Top 3 hiển thị cả Points, Transfers và Net Points
+- **Ties handling**: Multiple tied winners hiển thị với " & " (ví dụ: "Manager A & Manager B")
 
 #### **Ví dụ thực tế:**
+
+##### **Single Winner:**
 ```
 Manager A: 70 points, 2(-4) transfers → NPOINTS: 66
 Manager B: 68 points, 0 transfers → NPOINTS: 68
 Winner: Manager B (68 net points > 66 net points)
+```
+
+##### **Tied Winners:**
+```
+GW5 Results:
+Manager A: 75 points, 2(-4) transfers → NPOINTS: 71
+Manager B: 79 points, 3(-8) transfers → NPOINTS: 71
+Manager C: 65 points, 0 transfers → NPOINTS: 65
+
+Awards Summary Display: "Manager A & Manager B"
+Both managers get +1 Weekly Win
 ```
 
 #### **Lợi ích:**

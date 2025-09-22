@@ -1745,10 +1745,15 @@ def build_awards_summary_table(gw_points_df: pd.DataFrame, month_mapping: Dict[i
         weekly_winner = ""
 
         if not weekly_ranking.empty:
-            # Get the winner (rank 1 with lowest transfers if tied)
+            # Get all tied winners (rank 1)
             winners = weekly_ranking[weekly_ranking['Rank'] == 1]
             if len(winners) > 0:
-                weekly_winner = winners.iloc[0]['Manager']
+                if len(winners) == 1:
+                    weekly_winner = winners.iloc[0]['Manager']
+                else:
+                    # Multiple tied winners - join with " & "
+                    winner_names = winners['Manager'].tolist()
+                    weekly_winner = " & ".join(winner_names)
 
         # Determine which month this GW belongs to
         month = month_mapping.get(gw, 1)
@@ -1769,10 +1774,15 @@ def build_awards_summary_table(gw_points_df: pd.DataFrame, month_mapping: Dict[i
     for month in available_months:
         monthly_ranking = build_monthly_ranking(gw_points_df, month_mapping, month)
         if not monthly_ranking.empty:
-            # Get the winner (rank 1 with lowest transfers if tied)
+            # Get all tied winners (rank 1)
             winners = monthly_ranking[monthly_ranking['Rank'] == 1]
             if len(winners) > 0:
-                monthly_winners[month] = winners.iloc[0]['Manager']
+                if len(winners) == 1:
+                    monthly_winners[month] = winners.iloc[0]['Manager']
+                else:
+                    # Multiple tied winners - join with " & "
+                    winner_names = winners['Manager'].tolist()
+                    monthly_winners[month] = " & ".join(winner_names)
 
     # Add monthly winners to the dataframe
     awards_summary_df['Monthly_Wins'] = awards_summary_df['Month'].map(monthly_winners).fillna("")
