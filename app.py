@@ -122,14 +122,27 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
     if df.empty:
         return "<p>No data available</p>"
 
+    # Determine if we need sticky columns (for gw and month tables)
+    use_sticky_columns = table_type in ['gw', 'month']
+
     # Start building HTML
-    html = '<div class="table-container">'
-    html += '<table class="custom-table">'
+    html = '<div class="table-container'
+    if use_sticky_columns:
+        html += ' sticky-table-container'
+    html += '">'
+    html += '<table class="custom-table'
+    if use_sticky_columns:
+        html += ' sticky-columns-table'
+    html += '">'
 
     # Header
     html += '<thead><tr>'
-    for col in df.columns:
-        html += f'<th>{col}</th>'
+    for idx, col in enumerate(df.columns):
+        # Add sticky class to first 3 columns for gw and month tables
+        if use_sticky_columns and idx < 3:
+            html += f'<th class="sticky-col sticky-col-{idx}">{col}</th>'
+        else:
+            html += f'<th>{col}</th>'
     html += '</tr></thead>'
 
     # Body
@@ -313,6 +326,14 @@ def render_custom_table(df: pd.DataFrame, table_type: str = "default", team_id_m
                         display_value = transfer_text
                 else:
                     display_value = str(value)
+
+            # Add sticky class to first 3 columns for gw and month tables
+            if use_sticky_columns and i < 3:
+                sticky_class = f"sticky-col sticky-col-{i}"
+                if css_class:
+                    css_class = f"{css_class} {sticky_class}"
+                else:
+                    css_class = sticky_class
 
             html += f'<td class="{css_class}">{display_value}</td>'
         html += '</tr>'
@@ -1667,10 +1688,16 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
             'Manager': manager['Manager'],
             'Team': manager['Team'],
             'Weekly_Wins': 0,
-            'Monthly_Wins': 0
+            'Monthly_Wins': 0,
+            'Weekly_Prize_Money': 0.0,
+            'Monthly_Prize_Money': 0.0
         })
 
     awards_df = pd.DataFrame(awards_data)
+
+    # Prize money constants
+    WEEKLY_PRIZE = 300000  # $300,000 for weekly winner
+    MONTHLY_PRIZE = 500000  # $500,000 for monthly winner
 
     # Calculate weekly wins (1st place in each GW)
     available_gws = sorted(gw_points_df['GW'].unique())
@@ -1680,9 +1707,13 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
         if not weekly_ranking.empty:
             # Get all rank 1 winners (handle ties)
             winners = weekly_ranking[weekly_ranking['Rank'] == 1]
+            num_winners = len(winners)
+            prize_per_winner = WEEKLY_PRIZE / num_winners  # Split prize equally
+
             for _, winner in winners.iterrows():
                 manager_name = winner['Manager']
                 awards_df.loc[awards_df['Manager'] == manager_name, 'Weekly_Wins'] += 1
+                awards_df.loc[awards_df['Manager'] == manager_name, 'Weekly_Prize_Money'] += prize_per_winner
 
     # Calculate monthly wins (1st place in each month)
     available_months = sorted(set(month_mapping.values()))
@@ -1692,16 +1723,21 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
         if not monthly_ranking.empty:
             # Get all rank 1 winners (handle ties)
             winners = monthly_ranking[monthly_ranking['Rank'] == 1]
+            num_winners = len(winners)
+            prize_per_winner = MONTHLY_PRIZE / num_winners  # Split prize equally
+
             for _, winner in winners.iterrows():
                 manager_name = winner['Manager']
                 awards_df.loc[awards_df['Manager'] == manager_name, 'Monthly_Wins'] += 1
+                awards_df.loc[awards_df['Manager'] == manager_name, 'Monthly_Prize_Money'] += prize_per_winner
 
-    # Calculate total awards
+    # Calculate total awards and prize money
     awards_df['Total_Awards'] = awards_df['Weekly_Wins'] + awards_df['Monthly_Wins']
+    awards_df['Total_Prize_Money'] = awards_df['Weekly_Prize_Money'] + awards_df['Monthly_Prize_Money']
 
-    # Sort by total awards descending, then by weekly wins, then by monthly wins
-    awards_df = awards_df.sort_values(['Total_Awards', 'Weekly_Wins', 'Monthly_Wins'],
-                                     ascending=[False, False, False]).reset_index(drop=True)
+    # Sort by total prize money descending (changed from total awards)
+    awards_df = awards_df.sort_values(['Total_Prize_Money', 'Total_Awards', 'Weekly_Wins', 'Monthly_Wins'],
+                                     ascending=[False, False, False, False]).reset_index(drop=True)
 
     # Add rank
     awards_df['Rank'] = range(1, len(awards_df) + 1)
@@ -1719,8 +1755,28 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
 
     awards_df['Medal'] = awards_df['Rank'].apply(get_award_medal)
 
-    # Reorder columns
-    cols = ['Medal', 'Rank', 'Manager', 'Team', 'Weekly_Wins', 'Monthly_Wins', 'Total_Awards']
+    # Add emotion icon based on total prize money
+    def get_emotion_icon(prize_money):
+        if prize_money >= 1000000:
+            return "😄"  # Happy if >= 1M
+        elif prize_money > 0:
+            return "😢"  # Sad if < 1M but > 0
+        else:
+            return "😭"  # Very sad if 0
+
+    awards_df['Emotion'] = awards_df['Total_Prize_Money'].apply(get_emotion_icon)
+
+    # Add emotion to Manager name
+    awards_df['Manager'] = awards_df['Manager'] + ' ' + awards_df['Emotion']
+
+    # Format prize money with 💲 symbol and commas
+    def format_prize_money(amount):
+        return f"💲{amount:,.0f}"
+
+    awards_df['💲'] = awards_df['Total_Prize_Money'].apply(format_prize_money)
+
+    # Reorder columns - add 💲 column and remove emotion column
+    cols = ['Medal', 'Rank', 'Manager', 'Team', 'Weekly_Wins', 'Monthly_Wins', 'Total_Awards', '💲']
     awards_df = awards_df[cols]
 
     return awards_df
@@ -2066,6 +2122,55 @@ def main():
             margin: 10px 0;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Sticky columns for GW and Month tables */
+        .sticky-table-container {
+            position: relative;
+        }
+
+        .sticky-columns-table .sticky-col {
+            position: sticky;
+            background-color: white;
+            z-index: 10;
+        }
+
+        .sticky-columns-table thead .sticky-col {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            z-index: 11;
+        }
+
+        .sticky-columns-table .sticky-col-0 {
+            left: 0;
+            min-width: 50px;
+        }
+
+        .sticky-columns-table .sticky-col-1 {
+            left: 50px;
+            min-width: 150px;
+        }
+
+        .sticky-columns-table .sticky-col-2 {
+            left: 200px;
+            min-width: 150px;
+        }
+
+        /* Add shadow to last sticky column */
+        .sticky-columns-table .sticky-col-2 {
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Ensure sticky columns maintain background on hover */
+        .sticky-columns-table tbody tr:hover .sticky-col {
+            background-color: #e3f2fd;
+        }
+
+        .sticky-columns-table tbody tr:nth-child(even) .sticky-col {
+            background-color: #f8f9fa;
+        }
+
+        .sticky-columns-table tbody tr:nth-child(even):hover .sticky-col {
+            background-color: #e3f2fd;
         }
 
         /* Hyperlink styling for GW Points */
@@ -3005,8 +3110,9 @@ def main():
                                 weekly_wins = row['Weekly_Wins']
                                 monthly_wins = row['Monthly_Wins']
                                 total_awards = row['Total_Awards']
+                                prize_money = row['💲']
 
-                                display_text = f"{medal} **{manager}** ({team}) - {total_awards} total awards ({weekly_wins} weekly, {monthly_wins} monthly)"
+                                display_text = f"{medal} **{manager}** ({team}) - {total_awards} total awards ({weekly_wins} weekly, {monthly_wins} monthly) - Prize: {prize_money}"
 
                                 if rank == 1:
                                     st.success(display_text)
