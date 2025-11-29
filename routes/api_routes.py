@@ -207,7 +207,7 @@ def get_month_points():
         phase = request.args.get('phase', 1, type=int)
         gw_start = request.args.get('gw_start', 1, type=int)
         gw_end = request.args.get('gw_end', 10, type=int)
-        month_mapping_str = request.args.get('month_mapping', '1-4,5-9,10-13,14-17,18-21,22-26,27-30,31-34,35-38')
+        month_mapping_str = request.args.get('month_mapping', config.DEFAULT_MONTH_MAPPING)
         max_entries = request.args.get('max_entries', type=int)
 
         if not league_id:

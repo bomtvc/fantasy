@@ -486,8 +486,8 @@
     }
 
     function parseMonthMapping() {
-        // Default month mapping: "1-4,5-9,10-13,14-17,18-21,22-26,27-30,31-34,35-38"
-        const mappingStr = "1-4,5-9,10-13,14-17,18-21,22-26,27-30,31-34,35-38";
+        // Lấy month mapping từ hidden input (từ config.py)
+        const mappingStr = document.getElementById('month-mapping')?.value || "1-4,5-8,9-12,13-16,17-20,21-24,25-28,29-32,33-36,37-38";
         const mapping = {};
         const ranges = mappingStr.split(',');
 
