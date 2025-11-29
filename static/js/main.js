@@ -164,20 +164,45 @@ function setupEventListeners() {
 function setupMobileMenu() {
     const navbarToggle = document.getElementById('navbarToggle');
     const sidebar = document.getElementById('sidebar');
+    const navbarNav = document.querySelector('.navbar-nav');
 
-    if (navbarToggle && sidebar) {
+    if (navbarToggle) {
         navbarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
+            // Toggle navbar menu on mobile
+            if (navbarNav) {
+                navbarNav.classList.toggle('active');
+                navbarToggle.classList.toggle('active');
+            }
+            // Also toggle sidebar if exists
+            if (sidebar) {
+                sidebar.classList.toggle('active');
+            }
         });
 
-        // Close sidebar when clicking outside
+        // Close menus when clicking outside
         document.addEventListener('click', (e) => {
             if (window.innerWidth <= 1024) {
-                if (!sidebar.contains(e.target) && !navbarToggle.contains(e.target)) {
-                    sidebar.classList.remove('active');
+                const isClickInsideNav = navbarNav && navbarNav.contains(e.target);
+                const isClickInsideSidebar = sidebar && sidebar.contains(e.target);
+                const isClickOnToggle = navbarToggle.contains(e.target);
+
+                if (!isClickInsideNav && !isClickInsideSidebar && !isClickOnToggle) {
+                    if (navbarNav) navbarNav.classList.remove('active');
+                    if (sidebar) sidebar.classList.remove('active');
+                    navbarToggle.classList.remove('active');
                 }
             }
         });
+
+        // Close menu when clicking a nav link
+        if (navbarNav) {
+            navbarNav.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    navbarNav.classList.remove('active');
+                    navbarToggle.classList.remove('active');
+                });
+            });
+        }
     }
 
     // Setup sidebar collapse toggle
