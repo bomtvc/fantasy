@@ -431,18 +431,22 @@ def get_awards_leaderboard():
         if not league_id:
             return jsonify({'success': False, 'error': 'league_id required'}), 400
 
+        # Limit gw_end to current GW (don't count future GWs)
+        current_gw = get_current_gw()
+        gw_end = min(gw_end, current_gw)
+
         # Parse month mapping
         month_mapping = parse_month_mapping(month_mapping_str)
 
         # Get league entries
         entries_df = get_all_league_entries(league_id, phase)
 
-        # Build GW points table
+        # Build GW points table - only up to current GW
         gw_range = list(range(gw_start, gw_end + 1))
         gw_points_df = build_gw_points_table(entries_df, gw_range, max_entries)
 
-        # Build awards leaderboard
-        leaderboard_df = build_awards_leaderboard(gw_points_df, month_mapping)
+        # Build awards leaderboard - only count completed months
+        leaderboard_df = build_awards_leaderboard(gw_points_df, month_mapping, current_gw)
 
         return jsonify({
             'success': True,

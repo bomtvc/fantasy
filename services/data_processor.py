@@ -901,13 +901,14 @@ def build_awards_summary_table(gw_points_df: pd.DataFrame, month_mapping: Dict[i
     return awards_summary_df
 
 
-def build_awards_leaderboard(gw_points_df: pd.DataFrame, month_mapping: Dict[int, int]) -> pd.DataFrame:
+def build_awards_leaderboard(gw_points_df: pd.DataFrame, month_mapping: Dict[int, int], current_gw: int = 38) -> pd.DataFrame:
     """
     Build awards leaderboard with rankings, wins count, and prize money
 
     Args:
         gw_points_df: GW points DataFrame
         month_mapping: Dict mapping GW to month
+        current_gw: Current gameweek (to determine completed months)
 
     Returns:
         DataFrame with awards leaderboard
@@ -937,8 +938,8 @@ def build_awards_leaderboard(gw_points_df: pd.DataFrame, month_mapping: Dict[int
     WEEKLY_PRIZE = 300000
     MONTHLY_PRIZE = 500000
 
-    # Calculate weekly wins
-    available_gws = sorted(gw_points_df['GW'].unique())
+    # Calculate weekly wins - only for GWs that have been played
+    available_gws = sorted([gw for gw in gw_points_df['GW'].unique() if gw <= current_gw])
 
     for gw in available_gws:
         weekly_ranking = build_weekly_ranking(gw_points_df, gw)
@@ -952,20 +953,31 @@ def build_awards_leaderboard(gw_points_df: pd.DataFrame, month_mapping: Dict[int
                     awards_df.loc[awards_df['Manager'] == manager_name, 'Weekly_Wins'] += 1
                     awards_df.loc[awards_df['Manager'] == manager_name, 'Weekly_Prize_Money'] += prize_per_winner
 
-    # Calculate monthly wins
+    # Build reverse mapping: month -> [gw_start, gw_end]
+    month_ranges = {}
+    for gw, month in month_mapping.items():
+        if month not in month_ranges:
+            month_ranges[month] = [gw, gw]
+        else:
+            month_ranges[month][0] = min(month_ranges[month][0], gw)
+            month_ranges[month][1] = max(month_ranges[month][1], gw)
+
+    # Calculate monthly wins - only for completed months
     available_months = sorted(set(month_mapping.values()))
 
     for month in available_months:
-        monthly_ranking = build_monthly_ranking(gw_points_df, month_mapping, month)
-        if not monthly_ranking.empty:
-            winners = monthly_ranking[monthly_ranking['Rank'] == 1]
-            num_winners = len(winners)
-            if num_winners > 0:
-                prize_per_winner = MONTHLY_PRIZE / num_winners
-                for _, winner in winners.iterrows():
-                    manager_name = winner['Manager']
-                    awards_df.loc[awards_df['Manager'] == manager_name, 'Monthly_Wins'] += 1
-                    awards_df.loc[awards_df['Manager'] == manager_name, 'Monthly_Prize_Money'] += prize_per_winner
+        # Only count if month is complete (current_gw >= last GW of month)
+        if month in month_ranges and current_gw >= month_ranges[month][1]:
+            monthly_ranking = build_monthly_ranking(gw_points_df, month_mapping, month)
+            if not monthly_ranking.empty:
+                winners = monthly_ranking[monthly_ranking['Rank'] == 1]
+                num_winners = len(winners)
+                if num_winners > 0:
+                    prize_per_winner = MONTHLY_PRIZE / num_winners
+                    for _, winner in winners.iterrows():
+                        manager_name = winner['Manager']
+                        awards_df.loc[awards_df['Manager'] == manager_name, 'Monthly_Wins'] += 1
+                        awards_df.loc[awards_df['Manager'] == manager_name, 'Monthly_Prize_Money'] += prize_per_winner
 
     # Calculate totals
     awards_df['Total_Awards'] = awards_df['Weekly_Wins'] + awards_df['Monthly_Wins']
