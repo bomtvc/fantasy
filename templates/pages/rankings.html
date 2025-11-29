@@ -7,24 +7,8 @@
         <div class="cert-modal" onclick="event.stopPropagation()">
             <button class="cert-close-btn" onclick="closeCertModal()">&times;</button>
             <div class="certificate" id="certificate-content">
-                <div class="cert-border">
-                    <div class="cert-inner">
-                        <div class="cert-header">
-                            <img src="/static/images/fpl-logo.png" alt="FPL" class="cert-logo" onerror="this.style.display='none'">
-                            <h1 class="cert-title" id="cert-title">MANAGER OF THE WEEK</h1>
-                        </div>
-                        <div class="cert-body">
-                            <p class="cert-subtitle">This certificate is proudly presented to</p>
-                            <h2 class="cert-name" id="cert-manager-name">Manager Name</h2>
-                            <p class="cert-achievement" id="cert-achievement">For achieving 1st place in Gameweek 1</p>
-                            <p class="cert-points" id="cert-points">with 100 points</p>
-                        </div>
-                        <div class="cert-footer">
-                            <div class="cert-medal" id="cert-medal">🥇</div>
-                            <p class="cert-date" id="cert-date">Season 2024/25</p>
-                        </div>
-                    </div>
-                </div>
+                <!-- Only manager name displayed on background image -->
+                <h2 class="cert-name" id="cert-manager-name">Manager Name</h2>
             </div>
             <button class="cert-download-btn" onclick="downloadCertificate()">
                 📥 Download Certificate
@@ -118,170 +102,64 @@
 }
 
 .certificate {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    position: relative;
+    width: 700px;
+    height: 495px;
     border-radius: var(--radius-lg);
-    padding: 8px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
 }
 
 /* Weekly certificate with background image */
 .certificate.weekly-cert {
-    background: url('/static/images/Manager of the week.png') center center / cover no-repeat;
-    padding: 0;
+    background-image: url('/static/images/cert_week_bg.png');
 }
 
 /* Monthly certificate with background image */
 .certificate.monthly-cert {
-    background: url('/static/images/cert_month_bg.png') center center / cover no-repeat;
-    padding: 0;
+    background-image: url('/static/images/cert_month_bg.png');
 }
 
-/* Shared styles for certificates with background */
-.certificate.weekly-cert .cert-border,
-.certificate.monthly-cert .cert-border {
-    border: none;
-    padding: 0;
-    background: transparent;
-}
-
-.certificate.weekly-cert .cert-inner,
-.certificate.monthly-cert .cert-inner {
-    background: transparent;
-    border: none;
-    padding: var(--space-8) var(--space-6);
-    min-height: 400px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.certificate.weekly-cert .cert-title,
-.certificate.weekly-cert .cert-subtitle,
-.certificate.weekly-cert .cert-name,
-.certificate.weekly-cert .cert-achievement,
-.certificate.weekly-cert .cert-points,
-.certificate.weekly-cert .cert-date,
-.certificate.monthly-cert .cert-title,
-.certificate.monthly-cert .cert-subtitle,
-.certificate.monthly-cert .cert-name,
-.certificate.monthly-cert .cert-achievement,
-.certificate.monthly-cert .cert-points,
-.certificate.monthly-cert .cert-date {
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-}
-
-.certificate.weekly-cert .cert-header,
-.certificate.weekly-cert .cert-footer,
-.certificate.monthly-cert .cert-header,
-.certificate.monthly-cert .cert-footer {
-    display: none;
-}
-
-.cert-border {
-    border: 3px solid #ffd700;
-    border-radius: var(--radius-lg);
-    padding: 4px;
-}
-
-.cert-inner {
-    background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
-    border: 1px solid rgba(255, 215, 0, 0.3);
-    border-radius: var(--radius-md);
-    padding: var(--space-6);
+/* Manager name - positioned below "This certificate is presented to" */
+.certificate .cert-name {
+    position: absolute;
+    top: 35%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.9), 0 0 30px rgba(255,255,255,0.4);
     text-align: center;
-}
-
-.cert-header {
-    margin-bottom: var(--space-4);
-}
-
-.cert-logo {
-    width: 60px;
-    height: 60px;
-    margin-bottom: var(--space-2);
-}
-
-.cert-title {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #ffd700;
-    text-transform: uppercase;
-    letter-spacing: 3px;
     margin: 0;
-    text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
-}
-
-.cert-title.monthly {
-    background: linear-gradient(135deg, #ff6b6b, #ffd700);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-.cert-body {
-    margin: var(--space-5) 0;
-}
-
-.cert-subtitle {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 1rem;
-    margin: 0 0 var(--space-3) 0;
-}
-
-.cert-name {
-    font-size: 2.2rem;
-    font-weight: 700;
-    color: #fff;
-    margin: var(--space-2) 0;
-    text-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
-}
-
-.cert-achievement {
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 1.1rem;
-    margin: var(--space-2) 0;
-}
-
-.cert-points {
-    color: #4ade80;
-    font-size: 1.3rem;
-    font-weight: 600;
-    margin: var(--space-2) 0;
-}
-
-.cert-footer {
-    margin-top: var(--space-4);
-    padding-top: var(--space-3);
-    border-top: 1px solid rgba(255, 215, 0, 0.2);
-}
-
-.cert-medal {
-    font-size: 3rem;
-    margin-bottom: var(--space-2);
-}
-
-.cert-date {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.9rem;
-    margin: 0;
+    padding: 0 20px;
+    white-space: nowrap;
+    font-family: 'Georgia', serif;
+    letter-spacing: 2px;
 }
 
 .cert-download-btn {
-    width: 100%;
-    margin-top: var(--space-3);
-    padding: var(--space-3);
-    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+    margin-top: var(--space-4);
+    padding: var(--space-3) var(--space-6);
+    background: linear-gradient(135deg, #4ade80, #22c55e);
     border: none;
     border-radius: var(--radius-md);
     color: white;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s;
+    transition: all 0.3s ease;
+    display: block;
 }
 
 .cert-download-btn:hover {
     transform: scale(1.02);
+    box-shadow: 0 4px 15px rgba(74, 222, 128, 0.4);
 }
 
 /* Make podium medal clickable */
@@ -731,32 +609,19 @@
     function showCertificate(type, managerName, points, period) {
         const modal = document.getElementById('cert-modal-overlay');
         const certificate = document.getElementById('certificate-content');
-        const certTitle = document.getElementById('cert-title');
         const certName = document.getElementById('cert-manager-name');
-        const certAchievement = document.getElementById('cert-achievement');
-        const certPoints = document.getElementById('cert-points');
-        const certMedal = document.getElementById('cert-medal');
-        const certDate = document.getElementById('cert-date');
 
-        // Set certificate content based on type
+        // Set certificate background based on type
         if (type === 'weekly') {
-            certTitle.textContent = 'MANAGER OF THE WEEK';
-            certTitle.classList.remove('monthly');
             certificate.classList.remove('monthly-cert');
             certificate.classList.add('weekly-cert');
-            certAchievement.textContent = `For achieving 1st place in Gameweek ${period}`;
         } else {
-            certTitle.textContent = 'MANAGER OF THE MONTH';
-            certTitle.classList.add('monthly');
             certificate.classList.remove('weekly-cert');
             certificate.classList.add('monthly-cert');
-            certAchievement.textContent = `For achieving 1st place in Month ${period}`;
         }
 
+        // Only display manager name
         certName.textContent = managerName;
-        certPoints.textContent = `with ${formatNumber(points)} points`;
-        certMedal.textContent = '🥇';
-        certDate.textContent = `Season 2024/25`;
 
         // Store data for download
         modal.dataset.type = type;
