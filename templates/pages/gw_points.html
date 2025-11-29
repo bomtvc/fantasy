@@ -47,11 +47,20 @@
         const firstRow = data[0];
 
         // Find GW columns that are > currentGW
+        // Column names are numbers: 1, 2, 3... or "GW1", "GW2"...
         Object.keys(firstRow).forEach(col => {
-            const match = col.match(/^GW(\d+)$/);
-            if (match) {
-                const gwNum = parseInt(match[1]);
+            // Check if column is a number (GW column)
+            const gwNum = parseInt(col);
+            if (!isNaN(gwNum) && gwNum > 0 && gwNum <= 38) {
                 if (gwNum > currentGW) {
+                    hiddenCols.push(col);
+                }
+            }
+            // Also check GW{X} format
+            const match = col.match(/^GW(\d+)$/i);
+            if (match) {
+                const num = parseInt(match[1]);
+                if (num > currentGW) {
                     hiddenCols.push(col);
                 }
             }
