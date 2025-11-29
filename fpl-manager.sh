@@ -85,13 +85,11 @@ deploy() {
     python3 -m venv venv
     print_color "${GREEN}  ✓ Done${NC}"
 
-    # 3. Cài đặt Python packages
+    # 3. Cài đặt Python packages (dùng pip từ venv trực tiếp)
     print_color "${CYAN}[3/7]${NC} Cài đặt Python packages..."
-    source venv/bin/activate
-    pip install -q --upgrade pip setuptools wheel
-    pip install -q -r "$REQUIREMENTS"
-    pip install -q gunicorn
-    deactivate
+    ./venv/bin/pip install -q --upgrade pip setuptools wheel
+    ./venv/bin/pip install -q -r "$REQUIREMENTS"
+    ./venv/bin/pip install -q gunicorn
     print_color "${GREEN}  ✓ Done${NC}"
 
     # 4. Tạo thư mục cần thiết
@@ -100,13 +98,12 @@ deploy() {
     chmod 755 cache logs
     print_color "${GREEN}  ✓ Done${NC}"
 
-    # 5. Tạo start script (không cần dirname, chạy trực tiếp từ WorkingDirectory)
+    # 5. Tạo start script (dùng đường dẫn tuyệt đối, không cần source)
     print_color "${CYAN}[5/7]${NC} Tạo start script..."
-    cat > start.sh << 'STARTEOF'
+    cat > start.sh << STARTEOF
 #!/bin/bash
-# Activate venv và chạy gunicorn
-source venv/bin/activate
-exec venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 --timeout 120 --access-logfile logs/access.log --error-logfile logs/error.log "flask_app:create_app()"
+# Chạy gunicorn trực tiếp từ venv
+exec $APP_DIR/venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 --timeout 120 --access-logfile $APP_DIR/logs/access.log --error-logfile $APP_DIR/logs/error.log "flask_app:create_app()"
 STARTEOF
     chmod +x start.sh
     print_color "${GREEN}  ✓ Done${NC}"
