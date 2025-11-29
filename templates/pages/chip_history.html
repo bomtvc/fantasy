@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="chip-history-page">
+    <!-- Chip History Table -->
+    <div class="chip-card">
+        <div class="chip-header">
+            <h3>🎯 Chip Usage History</h3>
+            <div class="chip-legend">
+                <span class="chip-badge chip-wildcard">WC</span>
+                <span class="chip-badge chip-freehit">FH</span>
+                <span class="chip-badge chip-bboost">BB</span>
+                <span class="chip-badge chip-3xc">TC</span>
+            </div>
+        </div>
+        <div class="chip-content">
+            <div id="chip-history-table"></div>
+        </div>
+    </div>
+
+    <!-- Chip Statistics -->
+    <div class="chip-stats-grid" id="chip-stats-grid"></div>
+</div>
+
+<style>
+.chip-history-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.chip-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.chip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+}
+
+.chip-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 1.1rem;
+}
+
+.chip-legend {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.chip-badge {
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.chip-wildcard { background: #ff6b6b; color: white; }
+.chip-freehit { background: #4ecdc4; color: white; }
+.chip-bboost { background: #45b7d1; color: white; }
+.chip-3xc { background: #f7b731; color: #333; }
+
+.chip-content {
+    padding: var(--space-3);
+    overflow-x: auto;
+}
+
+/* Chip History Table Styles */
+#chip-history-table table {
+    width: 100%;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+#chip-history-table th {
+    background: var(--color-bg-secondary);
+    padding: var(--space-2);
+    text-align: center;
+    position: sticky;
+    top: 0;
+}
+
+#chip-history-table th:nth-child(1),
+#chip-history-table th:nth-child(2) {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--color-bg-tertiary);
+}
+
+#chip-history-table th:nth-child(2) {
+    left: 100px;
+}
+
+#chip-history-table td {
+    text-align: center;
+    padding: var(--space-1) var(--space-2);
+}
+
+#chip-history-table td:nth-child(1),
+#chip-history-table td:nth-child(2) {
+    position: sticky;
+    left: 0;
+    background: var(--color-bg-primary);
+    z-index: 1;
+    text-align: left;
+}
+
+#chip-history-table td:nth-child(2) {
+    left: 100px;
+}
+
+/* Chip cell styles */
+.chip-cell {
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.chip-cell.wildcard { background: #ff6b6b; color: white; }
+.chip-cell.freehit { background: #4ecdc4; color: white; }
+.chip-cell.bboost { background: #45b7d1; color: white; }
+.chip-cell.3xc { background: #f7b731; color: #333; }
+.chip-cell.empty { color: var(--color-text-muted); }
+
+/* Chip Statistics Grid */
+.chip-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-3);
+}
+
+.chip-stat-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    text-align: center;
+}
+
+.chip-stat-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-2);
+}
+
+.chip-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.chip-stat-label {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    margin-top: var(--space-1);
+}
+
+.chip-stat-card.wildcard { border-top: 3px solid #ff6b6b; }
+.chip-stat-card.freehit { border-top: 3px solid #4ecdc4; }
+.chip-stat-card.bboost { border-top: 3px solid #45b7d1; }
+.chip-stat-card.3xc { border-top: 3px solid #f7b731; }
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let chipDataTable;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize data table
+        chipDataTable = new DataTable('chip-history-table', {
+            searchable: true,
+            sortable: true,
+            paginated: false,
+            exportable: true,
+            pageSize: 30,
+            compactControls: true,
+            columnOrder: ['Manager', 'Team']
+        });
+
+        // Load data
+        const leagueId = document.getElementById('league-id').value;
+        if (leagueId) {
+            loadChipHistory();
+        }
+    });
+
+    async function loadChipHistory(forceRefresh = false) {
+        const filters = getCurrentFilters();
+
+        try {
+            showLoading('Loading chip history...');
+
+            const queryString = buildQueryString(filters);
+            const data = await cachedFetch('chip_history', `/api/chip-history?${queryString}`, forceRefresh);
+
+            if (data.success) {
+                // Format chip data for display
+                const formattedData = formatChipData(data.data);
+
+                // Build column order: Manager, Team, then GW1, GW2, ... in numeric order
+                const gwColumns = data.columns
+                    .filter(col => col.startsWith('GW'))
+                    .sort((a, b) => parseInt(a.replace('GW', '')) - parseInt(b.replace('GW', '')));
+                const columnOrder = ['Manager', 'Team', ...gwColumns];
+
+                // Update DataTable with proper column order
+                chipDataTable.options.columnOrder = columnOrder;
+                chipDataTable.setData(formattedData);
+
+                // Calculate and display statistics
+                calculateChipStats(data.data);
+            } else {
+                console.error('Error loading chip history:', data.error);
+            }
+        } catch (error) {
+            console.error('Error loading chip history:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function formatChipData(data) {
+        return data.map(row => {
+            const formattedRow = {...row};
+
+            // Format each GW column (columns starting with 'GW')
+            Object.keys(formattedRow).forEach(key => {
+                if (key.startsWith('GW')) {
+                    const chip = formattedRow[key];
+                    formattedRow[key] = formatChipCell(chip);
+                }
+            });
+
+            return formattedRow;
+        });
+    }
+
+    function formatChipCell(chip) {
+        if (!chip || chip === '-' || chip === 'None') {
+            return '<span class="chip-cell empty">-</span>';
+        }
+
+        const chipMap = {
+            'wildcard': { label: 'WC', class: 'wildcard' },
+            'freehit': { label: 'FH', class: 'freehit' },
+            'bboost': { label: 'BB', class: 'bboost' },
+            '3xc': { label: 'TC', class: '3xc' }
+        };
+
+        const chipInfo = chipMap[chip.toLowerCase()] || { label: chip, class: '' };
+        return `<span class="chip-cell ${chipInfo.class}">${chipInfo.label}</span>`;
+    }
+
+    function calculateChipStats(data) {
+        const stats = {
+            wildcard: 0,
+            freehit: 0,
+            bboost: 0,
+            '3xc': 0
+        };
+
+        // Count chip usage (columns starting with 'GW')
+        data.forEach(row => {
+            Object.keys(row).forEach(key => {
+                if (key.startsWith('GW')) {
+                    const chip = row[key];
+                    if (chip && chip !== '-' && chip !== 'None') {
+                        const chipLower = chip.toLowerCase();
+                        if (stats.hasOwnProperty(chipLower)) {
+                            stats[chipLower]++;
+                        }
+                    }
+                }
+            });
+        });
+
+        // Render stats cards
+        const statsGrid = document.getElementById('chip-stats-grid');
+        statsGrid.innerHTML = `
+            <div class="chip-stat-card wildcard">
+                <div class="chip-stat-icon">🃏</div>
+                <div class="chip-stat-value">${stats.wildcard}</div>
+                <div class="chip-stat-label">Wildcard Used</div>
+            </div>
+            <div class="chip-stat-card freehit">
+                <div class="chip-stat-icon">⚡</div>
+                <div class="chip-stat-value">${stats.freehit}</div>
+                <div class="chip-stat-label">Free Hit Used</div>
+            </div>
+            <div class="chip-stat-card bboost">
+                <div class="chip-stat-icon">💪</div>
+                <div class="chip-stat-value">${stats.bboost}</div>
+                <div class="chip-stat-label">Bench Boost Used</div>
+            </div>
+            <div class="chip-stat-card 3xc">
+                <div class="chip-stat-icon">👑</div>
+                <div class="chip-stat-value">${stats['3xc']}</div>
+                <div class="chip-stat-label">Triple Captain Used</div>
+            </div>
+        `;
+    }
+
+    // Override reloadPageData (force refresh when filters change)
+    window.reloadPageData = function(filters) {
+        DataCache.clear('chip_history');
+        loadChipHistory(true);
+    };
+</script>
+{% endblock %}

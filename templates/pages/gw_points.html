@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="gw-points-page">
+    <!-- Data Table Container -->
+    <div id="gw-points-table"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // GW Points Page Logic
+    let gwDataTable;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Initialize data table
+        gwDataTable = new DataTable('gw-points-table', {
+            searchable: true,
+            sortable: true,
+            paginated: true,
+            exportable: true,
+            pageSize: 25,
+            hiddenColumns: ['Team_ID'],
+            columnOrder: ['Manager', 'Team'],
+            compactControls: true
+        });
+
+        // Load data if league ID is set
+        const leagueId = document.getElementById('league-id').value;
+        if (leagueId) {
+            loadGWPoints();
+        }
+    });
+
+    // Override reloadPageData from main.js (force refresh when filters change)
+    window.reloadPageData = function (filters) {
+        DataCache.clear('gw_points');
+        loadGWPoints(true);
+    };
+
+    async function loadGWPoints(forceRefresh = false) {
+        const filters = getCurrentFilters();
+
+        // Validate
+        const validation = validateFilters(filters);
+        if (!validation.valid) {
+            validation.errors.forEach(error => showToast(error, 'error'));
+            return;
+        }
+
+        try {
+            showLoading('Loading GW points...');
+
+            const queryString = buildQueryString(filters);
+            const data = await cachedFetch('gw_points', `/api/gw-points?${queryString}`, forceRefresh);
+
+            if (data.success) {
+                gwDataTable.setData(data.data);
+                showToast('GW points loaded successfully', 'success');
+            } else {
+                showToast(data.error || 'Failed to load data', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading GW points:', error);
+            showToast('Error loading data', 'error');
+        } finally {
+            hideLoading();
+        }
+    }
+</script>
+{% endblock %}

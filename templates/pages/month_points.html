@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="month-points-page">
+    <!-- Data Table Container -->
+    <div id="month-points-table"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Month Points Page Logic
+    let monthDataTable;
+
+    // Custom column labels for month points
+    function monthColumnLabels(colName) {
+        // Month_1 -> 1, Month_2 -> 2, etc.
+        if (/^Month_\d+$/.test(colName)) {
+            return colName.replace('Month_', '');
+        }
+        // Month_1_Transfers -> 1T, Month_2_Transfers -> 2T, etc.
+        if (/^Month_\d+_Transfers$/.test(colName)) {
+            return colName.replace('Month_', '').replace('_Transfers', 'T');
+        }
+        return null; // Use default formatting
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Initialize data table
+        monthDataTable = new DataTable('month-points-table', {
+            searchable: true,
+            sortable: true,
+            paginated: true,
+            exportable: true,
+            pageSize: 25,
+            hiddenColumns: ['Team_ID', 'Rank', 'Total'],
+            columnOrder: ['Manager', 'Team'],
+            compactControls: true,
+            columnLabels: monthColumnLabels
+        });
+
+        // Load data if league ID is set
+        const leagueId = document.getElementById('league-id').value;
+        if (leagueId) {
+            loadMonthPoints();
+        }
+    });
+
+    // Override reloadPageData (force refresh when filters change)
+    window.reloadPageData = function (filters) {
+        DataCache.clear('month_points');
+        loadMonthPoints(true);
+    };
+
+    async function loadMonthPoints(forceRefresh = false) {
+        const filters = getCurrentFilters();
+
+        // Validate
+        const validation = validateFilters(filters);
+        if (!validation.valid) {
+            validation.errors.forEach(error => showToast(error, 'error'));
+            return;
+        }
+
+        try {
+            showLoading('Loading month points...');
+
+            const queryString = buildQueryString(filters);
+            const data = await cachedFetch('month_points', `/api/month-points?${queryString}`, forceRefresh);
+
+            if (data.success) {
+                monthDataTable.setData(data.data);
+                showToast('Month points loaded successfully', 'success');
+            } else {
+                showToast(data.error || 'Failed to load data', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading month points:', error);
+            showToast('Error loading data', 'error');
+        } finally {
+            hideLoading();
+        }
+    }
+</script>
+{% endblock %}

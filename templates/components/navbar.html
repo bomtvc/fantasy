@@ -1,0 +1,72 @@
+<nav class="navbar">
+    <div class="navbar-container">
+        <!-- Logo & Brand -->
+        <div class="navbar-brand">
+            <span class="navbar-logo">⚽</span>
+            <span class="navbar-title">{{ config.PAGE_TITLE }}</span>
+        </div>
+
+        <!-- Navigation Links -->
+        <ul class="navbar-nav">
+            <li class="nav-item">
+                <a href="{{ url_for('main.index') }}" class="nav-link">
+                    <span class="nav-icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.league_members') }}" class="nav-link">
+                    <span class="nav-icon">👥</span>
+                    <span>Members</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.gw_points') }}" class="nav-link">
+                    <span class="nav-icon">📈</span>
+                    <span>GW Points</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.month_points') }}" class="nav-link">
+                    <span class="nav-icon">📅</span>
+                    <span>Month Points</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.rankings') }}" class="nav-link">
+                    <span class="nav-icon">🏆</span>
+                    <span>Rankings</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.awards') }}" class="nav-link">
+                    <span class="nav-icon">🏅</span>
+                    <span>Awards</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.chip_history') }}" class="nav-link">
+                    <span class="nav-icon">🎯</span>
+                    <span>Chips</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.transfer_history') }}" class="nav-link">
+                    <span class="nav-icon">🔄</span>
+                    <span>Transfers</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="{{ url_for('main.fun_stats') }}" class="nav-link">
+                    <span class="nav-icon">🎉</span>
+                    <span>Fun Stats</span>
+                </a>
+            </li>
+        </ul>
+
+        <!-- Mobile Menu Toggle -->
+        <button class="navbar-toggle" id="navbarToggle">
+            <span class="hamburger"></span>
+        </button>
+    </div>
+</nav>

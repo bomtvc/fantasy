@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="awards-page">
+    <!-- Awards Grid -->
+    <div class="awards-grid">
+        <!-- Winners Summary -->
+        <div class="awards-card">
+            <div class="awards-header">
+                <h3>📅 Weekly & Monthly Winners</h3>
+            </div>
+            <div class="awards-content">
+                <div id="awards-summary-table"></div>
+            </div>
+        </div>
+
+        <!-- Awards Leaderboard -->
+        <div class="awards-card leaderboard-card">
+            <div class="awards-header">
+                <h3>🏆 Awards Leaderboard</h3>
+            </div>
+            <div class="awards-content">
+                <div id="awards-leaderboard-table"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top 3 Winners Podium -->
+    <div class="top3-winners" id="top3-winners"></div>
+</div>
+
+<style>
+.awards-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.awards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: var(--space-4);
+}
+
+@media (max-width: 1200px) {
+    .awards-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.awards-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.awards-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
+}
+
+.awards-header h3 {
+    margin: 0;
+    color: #333;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.awards-content {
+    padding: var(--space-3);
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* Winners Summary Table Styles */
+#awards-summary-table table {
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+#awards-summary-table th {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    color: white;
+}
+
+#awards-summary-table td {
+    text-align: center;
+    padding: var(--space-2);
+}
+
+.monthly-winner-cell {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffe8a1 100%) !important;
+    font-weight: 600;
+    color: #856404;
+    border-left: 3px solid #ffc107 !important;
+}
+
+/* Leaderboard Table Styles */
+#awards-leaderboard-table table {
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+#awards-leaderboard-table th {
+    background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
+    color: #333;
+}
+
+#awards-leaderboard-table td:first-child {
+    font-size: 1.3rem;
+}
+
+#awards-leaderboard-table tr:nth-child(1) td { background: rgba(255, 215, 0, 0.2); }
+#awards-leaderboard-table tr:nth-child(2) td { background: rgba(192, 192, 192, 0.2); }
+#awards-leaderboard-table tr:nth-child(3) td { background: rgba(205, 127, 50, 0.2); }
+
+/* Top 3 Winners Podium */
+.top3-winners {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+.top3-winners h4 {
+    text-align: center;
+    margin: 0 0 var(--space-4) 0;
+    color: var(--color-text-primary);
+}
+
+.podium-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    gap: var(--space-4);
+    padding: var(--space-4) 0;
+}
+
+.podium-winner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 120px;
+}
+
+.podium-trophy {
+    font-size: 2.5rem;
+    margin-bottom: var(--space-2);
+}
+
+.podium-info {
+    margin-bottom: var(--space-2);
+}
+
+.podium-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--color-text-primary);
+}
+
+.podium-stats {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+.podium-prize {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #28a745;
+    margin-top: var(--space-1);
+}
+
+.podium-stand {
+    width: 100px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: rgba(255,255,255,0.9);
+}
+
+.podium-winner:nth-child(1) .podium-stand {
+    height: 70px;
+    background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%);
+}
+.podium-winner:nth-child(2) .podium-stand {
+    height: 100px;
+    background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+}
+.podium-winner:nth-child(3) .podium-stand {
+    height: 50px;
+    background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%);
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let summaryDataTable, leaderboardDataTable;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize data tables
+        summaryDataTable = new DataTable('awards-summary-table', {
+            searchable: false,
+            sortable: false,
+            paginated: false,
+            exportable: false,
+            hiddenColumns: ['Month'],
+            customRender: renderSummaryTable
+        });
+
+        leaderboardDataTable = new DataTable('awards-leaderboard-table', {
+            searchable: false,
+            sortable: true,
+            paginated: false,
+            exportable: false,
+            pageSize: 25,
+            compactControls: true,
+            hiddenColumns: ['Medal', 'Rank', 'Team'],
+            columnOrder: ['Manager', 'Weekly_Wins', 'Monthly_Wins', 'Total_Awards', 'Prize_Money']
+        });
+
+        // Load data
+        const leagueId = document.getElementById('league-id').value;
+        if (leagueId) {
+            loadAwardsData();
+        }
+    });
+
+    async function loadAwardsData(forceRefresh = false) {
+        const filters = getCurrentFilters();
+
+        try {
+            showLoading('Loading awards data...');
+
+            // Load both tables in parallel with cache
+            const [summaryData, leaderboardData] = await Promise.all([
+                cachedFetch('awards_summary', `/api/awards-summary?${buildQueryString(filters)}`, forceRefresh),
+                cachedFetch('awards_leaderboard', `/api/awards-leaderboard?${buildQueryString(filters)}`, forceRefresh)
+            ]);
+
+            if (summaryData.success) {
+                renderCustomSummaryTable(summaryData.data);
+            }
+
+            if (leaderboardData.success) {
+                leaderboardDataTable.setData(leaderboardData.data);
+                renderTop3Winners(leaderboardData.data);
+            }
+        } catch (error) {
+            console.error('Error loading awards data:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function renderCustomSummaryTable(data) {
+        if (!data || data.length === 0) {
+            document.getElementById('awards-summary-table').innerHTML = '<p>No data available</p>';
+            return;
+        }
+
+        // Group by month for merged cells
+        const monthGroups = {};
+        data.forEach(row => {
+            const month = row.Month;
+            if (!monthGroups[month]) {
+                monthGroups[month] = [];
+            }
+            monthGroups[month].push(row);
+        });
+
+        let html = '<table><thead><tr>';
+        html += '<th>GW</th>';
+        html += '<th>Weekly Winner 🥇</th>';
+        html += '<th>Monthly Winner 🏆</th>';
+        html += '</tr></thead><tbody>';
+
+        const sortedMonths = Object.keys(monthGroups).map(Number).sort((a, b) => a - b);
+
+        sortedMonths.forEach(month => {
+            const monthRows = monthGroups[month];
+            const monthWinner = monthRows[0]?.Monthly_Winner || '';
+
+            monthRows.forEach((row, idx) => {
+                html += '<tr>';
+                html += `<td>${row.GW}</td>`;
+                html += `<td>${row.Weekly_Winner}</td>`;
+
+                // Monthly winner cell (merged)
+                if (idx === 0) {
+                    const rowspan = monthRows.length;
+                    html += `<td class="monthly-winner-cell" rowspan="${rowspan}">${monthWinner}</td>`;
+                }
+
+                html += '</tr>';
+            });
+        });
+
+        html += '</tbody></table>';
+        document.getElementById('awards-summary-table').innerHTML = html;
+    }
+
+    function renderTop3Winners(data) {
+        const container = document.getElementById('top3-winners');
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        // Get top 3
+        const top3 = data.filter(row => row.Rank <= 3).slice(0, 3);
+
+        if (top3.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        // Reorder: 2nd, 1st, 3rd for podium display
+        const first = top3.find(r => r.Rank === 1);
+        const second = top3.find(r => r.Rank === 2);
+        const third = top3.find(r => r.Rank === 3);
+
+        const podiumOrder = [];
+        if (second) podiumOrder.push({...second, position: 2});
+        if (first) podiumOrder.push({...first, position: 1});
+        if (third) podiumOrder.push({...third, position: 3});
+
+        const html = `
+            <h4>🎖️ Top 3 Award Winners</h4>
+            <div class="podium-container">
+                ${podiumOrder.map(winner => `
+                    <div class="podium-winner">
+                        <span class="podium-trophy">${winner.Medal}</span>
+                        <div class="podium-info">
+                            <div class="podium-name">${winner.Manager}</div>
+                            <div class="podium-stats">
+                                ${winner.Weekly_Wins}🥇 ${winner.Monthly_Wins}🏆
+                            </div>
+                            <div class="podium-prize">${winner.Prize_Money}</div>
+                        </div>
+                        <div class="podium-stand">#${winner.position}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        container.innerHTML = html;
+    }
+
+    // Custom render for summary table (not used directly, using renderCustomSummaryTable instead)
+    function renderSummaryTable(data, columns) {
+        return null; // Let renderCustomSummaryTable handle it
+    }
+
+    // Override reloadPageData (force refresh when filters change)
+    window.reloadPageData = function(filters) {
+        DataCache.clear('awards_summary');
+        DataCache.clear('awards_leaderboard');
+        loadAwardsData(true);
+    };
+</script>
+{% endblock %}

@@ -1,0 +1,203 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard">
+    <!-- Quick Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">👥</div>
+            <div class="stat-content">
+                <h3 class="stat-value" id="total-entries">-</h3>
+                <p class="stat-label">Total Managers</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-content">
+                <h3 class="stat-value" id="total-gws">-</h3>
+                <p class="stat-label">Current Gameweek</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">🏆</div>
+            <div class="stat-content">
+                <h3 class="stat-value" id="league-leader">-</h3>
+                <p class="stat-label">League Leader</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">🔥</div>
+            <div class="stat-content">
+                <h3 class="stat-value" id="best-gw-points">-</h3>
+                <p class="stat-label">Best GW Score</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top 3 League Podium -->
+    <div class="top3-winners" id="top3-winners">
+        <h4>🏆 Top 3 League</h4>
+        <div class="podium-container" id="podium-container">
+            <p class="loading-text">Loading...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Top 3 League Podium */
+.top3-winners {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    margin-top: var(--space-4);
+}
+
+.top3-winners h4 {
+    text-align: center;
+    margin: 0 0 var(--space-4) 0;
+    color: var(--color-text-primary);
+    font-size: 1.3rem;
+}
+
+.podium-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    gap: var(--space-4);
+    padding: var(--space-4) 0;
+}
+
+.podium-container .loading-text {
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+
+.podium-winner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 120px;
+}
+
+.podium-trophy { font-size: 2.5rem; margin-bottom: var(--space-2); }
+.podium-info { margin-bottom: var(--space-2); }
+.podium-name { font-weight: 600; font-size: 1rem; color: var(--color-text-primary); }
+.podium-stats { font-size: 0.8rem; color: var(--color-text-secondary); }
+.podium-prize { font-size: 0.9rem; font-weight: 600; color: #28a745; margin-top: var(--space-1); }
+
+.podium-stand {
+    width: 100px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: rgba(255,255,255,0.9);
+}
+
+.podium-winner:nth-child(1) .podium-stand { height: 70px; background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%); }
+.podium-winner:nth-child(2) .podium-stand { height: 100px; background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%); }
+.podium-winner:nth-child(3) .podium-stand { height: 50px; background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%); }
+
+@media (max-width: 600px) {
+    .podium-container { flex-direction: column; align-items: center; }
+    .podium-winner { flex-direction: row; gap: var(--space-3); }
+    .podium-stand { width: 50px; height: 50px !important; border-radius: var(--radius-md); }
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const leagueId = document.getElementById('league-id').value;
+    if (leagueId) {
+        loadDashboardStats();
+        loadTop3League();
+    }
+});
+
+async function loadDashboardStats(forceRefresh = false) {
+    showLoading();
+    try {
+        const filters = getCurrentFilters();
+        const data = await cachedFetch('dashboard_stats', `/api/league/${filters.league_id}?phase=${filters.phase}`, forceRefresh);
+        if (data.success) {
+            document.getElementById('total-entries').textContent = data.data.total_entries;
+            document.getElementById('total-gws').textContent = data.data.current_gw || '-';
+            document.getElementById('league-leader').textContent = data.data.league_leader || '-';
+            document.getElementById('best-gw-points').textContent = data.data.best_gw_points ? formatNumber(data.data.best_gw_points) : '-';
+            const gwEndInput = document.getElementById('gw-end');
+            if (gwEndInput && data.data.current_gw) gwEndInput.value = data.data.current_gw;
+        }
+    } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function loadTop3League(forceRefresh = false) {
+    try {
+        const filters = getCurrentFilters();
+        const data = await cachedFetch('dashboard_entries', `/api/league/${filters.league_id}/entries?phase=${filters.phase}`, forceRefresh);
+        if (data.success) {
+            renderTop3League(data.data);
+        }
+    } catch (error) {
+        console.error('Error loading top 3 league:', error);
+        document.getElementById('podium-container').innerHTML = '<p class="loading-text">Failed to load data</p>';
+    }
+}
+
+function renderTop3League(data) {
+    const container = document.getElementById('podium-container');
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p class="loading-text">No data available</p>';
+        return;
+    }
+    const sorted = [...data].sort((a, b) => b.Total - a.Total);
+    const top3 = sorted.slice(0, 3);
+    if (top3.length === 0) {
+        container.innerHTML = '<p class="loading-text">No data yet</p>';
+        return;
+    }
+    top3.forEach((entry, idx) => {
+        entry.Rank = idx + 1;
+        entry.Medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉';
+    });
+    const first = top3.find(r => r.Rank === 1);
+    const second = top3.find(r => r.Rank === 2);
+    const third = top3.find(r => r.Rank === 3);
+    const podiumOrder = [];
+    if (second) podiumOrder.push({...second, position: 2});
+    if (first) podiumOrder.push({...first, position: 1});
+    if (third) podiumOrder.push({...third, position: 3});
+    container.innerHTML = podiumOrder.map(entry => `
+        <div class="podium-winner">
+            <span class="podium-trophy">${entry.Medal}</span>
+            <div class="podium-info">
+                <div class="podium-name">${entry.Manager}</div>
+                <div class="podium-stats">${entry.Team}</div>
+                <div class="podium-prize">${formatNumber(entry.Total)} pts</div>
+            </div>
+            <div class="podium-stand">#${entry.position}</div>
+        </div>
+    `).join('');
+}
+
+window.reloadPageData = function(filters) {
+    DataCache.clear('dashboard_stats');
+    DataCache.clear('dashboard_entries');
+    loadDashboardStats(true);
+    loadTop3League(true);
+};
+</script>
+{% endblock %}

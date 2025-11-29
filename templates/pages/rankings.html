@@ -1,0 +1,829 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="rankings-page">
+    <!-- Certificate Modal -->
+    <div class="cert-modal-overlay" id="cert-modal-overlay" onclick="closeCertModal()">
+        <div class="cert-modal" onclick="event.stopPropagation()">
+            <button class="cert-close-btn" onclick="closeCertModal()">&times;</button>
+            <div class="certificate" id="certificate-content">
+                <div class="cert-border">
+                    <div class="cert-inner">
+                        <div class="cert-header">
+                            <img src="/static/images/fpl-logo.png" alt="FPL" class="cert-logo" onerror="this.style.display='none'">
+                            <h1 class="cert-title" id="cert-title">MANAGER OF THE WEEK</h1>
+                        </div>
+                        <div class="cert-body">
+                            <p class="cert-subtitle">This certificate is proudly presented to</p>
+                            <h2 class="cert-name" id="cert-manager-name">Manager Name</h2>
+                            <p class="cert-achievement" id="cert-achievement">For achieving 1st place in Gameweek 1</p>
+                            <p class="cert-points" id="cert-points">with 100 points</p>
+                        </div>
+                        <div class="cert-footer">
+                            <div class="cert-medal" id="cert-medal">🥇</div>
+                            <p class="cert-date" id="cert-date">Season 2024/25</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="cert-download-btn" onclick="downloadCertificate()">
+                📥 Download Certificate
+            </button>
+        </div>
+    </div>
+
+    <!-- Rankings Grid -->
+    <div class="rankings-grid">
+        <!-- Weekly Ranking -->
+        <div class="ranking-card">
+            <div class="ranking-header">
+                <h3>📅 Weekly Ranking</h3>
+                <div class="gw-selector">
+                    <label>GW:</label>
+                    <select id="weekly-gw-select" class="gw-select"></select>
+                </div>
+            </div>
+            <div class="ranking-content">
+                <div id="weekly-ranking-table"></div>
+            </div>
+        </div>
+
+        <!-- Monthly Ranking -->
+        <div class="ranking-card">
+            <div class="ranking-header">
+                <h3>📊 Monthly Ranking</h3>
+                <div class="month-selector">
+                    <label>Month:</label>
+                    <select id="monthly-month-select" class="month-select"></select>
+                </div>
+            </div>
+            <div class="ranking-content">
+                <div id="monthly-ranking-table"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top 3 Summary -->
+    <div class="top3-summary" id="top3-summary"></div>
+</div>
+
+<style>
+/* Certificate Modal Styles */
+.cert-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: var(--space-4);
+}
+
+.cert-modal-overlay.active {
+    display: flex;
+}
+
+.cert-modal {
+    position: relative;
+    max-width: 700px;
+    width: 100%;
+    animation: certSlideIn 0.3s ease;
+}
+
+@keyframes certSlideIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.cert-close-btn {
+    position: absolute;
+    top: -15px;
+    right: -15px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: #ff4757;
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.certificate {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: var(--radius-lg);
+    padding: 8px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+/* Weekly certificate with background image */
+.certificate.weekly-cert {
+    background: url('/static/images/Manager of the week.png') center center / cover no-repeat;
+    padding: 0;
+}
+
+/* Monthly certificate with background image */
+.certificate.monthly-cert {
+    background: url('/static/images/cert_month_bg.png') center center / cover no-repeat;
+    padding: 0;
+}
+
+/* Shared styles for certificates with background */
+.certificate.weekly-cert .cert-border,
+.certificate.monthly-cert .cert-border {
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+.certificate.weekly-cert .cert-inner,
+.certificate.monthly-cert .cert-inner {
+    background: transparent;
+    border: none;
+    padding: var(--space-8) var(--space-6);
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.certificate.weekly-cert .cert-title,
+.certificate.weekly-cert .cert-subtitle,
+.certificate.weekly-cert .cert-name,
+.certificate.weekly-cert .cert-achievement,
+.certificate.weekly-cert .cert-points,
+.certificate.weekly-cert .cert-date,
+.certificate.monthly-cert .cert-title,
+.certificate.monthly-cert .cert-subtitle,
+.certificate.monthly-cert .cert-name,
+.certificate.monthly-cert .cert-achievement,
+.certificate.monthly-cert .cert-points,
+.certificate.monthly-cert .cert-date {
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+}
+
+.certificate.weekly-cert .cert-header,
+.certificate.weekly-cert .cert-footer,
+.certificate.monthly-cert .cert-header,
+.certificate.monthly-cert .cert-footer {
+    display: none;
+}
+
+.cert-border {
+    border: 3px solid #ffd700;
+    border-radius: var(--radius-lg);
+    padding: 4px;
+}
+
+.cert-inner {
+    background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--space-6);
+    text-align: center;
+}
+
+.cert-header {
+    margin-bottom: var(--space-4);
+}
+
+.cert-logo {
+    width: 60px;
+    height: 60px;
+    margin-bottom: var(--space-2);
+}
+
+.cert-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #ffd700;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin: 0;
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.cert-title.monthly {
+    background: linear-gradient(135deg, #ff6b6b, #ffd700);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.cert-body {
+    margin: var(--space-5) 0;
+}
+
+.cert-subtitle {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+    margin: 0 0 var(--space-3) 0;
+}
+
+.cert-name {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin: var(--space-2) 0;
+    text-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+}
+
+.cert-achievement {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1.1rem;
+    margin: var(--space-2) 0;
+}
+
+.cert-points {
+    color: #4ade80;
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: var(--space-2) 0;
+}
+
+.cert-footer {
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid rgba(255, 215, 0, 0.2);
+}
+
+.cert-medal {
+    font-size: 3rem;
+    margin-bottom: var(--space-2);
+}
+
+.cert-date {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.cert-download-btn {
+    width: 100%;
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.cert-download-btn:hover {
+    transform: scale(1.02);
+}
+
+/* Make podium medal clickable */
+.podium-medal.clickable {
+    cursor: pointer;
+    transition: transform 0.2s, filter 0.2s;
+}
+
+.podium-medal.clickable:hover {
+    transform: scale(1.2);
+    filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));
+}
+
+.rankings-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.rankings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-4);
+}
+
+@media (max-width: 1200px) {
+    .rankings-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ranking-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.ranking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+}
+
+.ranking-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 1.1rem;
+}
+
+.gw-selector, .month-selector {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.gw-selector label, .month-selector label {
+    color: rgba(255,255,255,0.9);
+    font-size: 0.9rem;
+}
+
+.gw-select, .month-select {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.2);
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.gw-select option, .month-select option {
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+}
+
+.ranking-content {
+    padding: var(--space-3);
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* Top 3 podium styles */
+.top3-summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-4);
+}
+
+@media (max-width: 768px) {
+    .top3-summary {
+        grid-template-columns: 1fr;
+    }
+}
+
+.top3-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+.top3-card h4 {
+    margin: 0 0 var(--space-3) 0;
+    color: var(--color-text-primary);
+    text-align: center;
+}
+
+.podium {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+}
+
+.podium-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.podium-medal {
+    font-size: 2rem;
+    margin-bottom: var(--space-1);
+}
+
+.podium-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--color-text-primary);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.podium-points {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+.podium-bar {
+    width: 80px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    margin-top: var(--space-2);
+}
+
+/* Podium order: 2nd (left), 1st (center), 3rd (right) */
+.podium-item:nth-child(1) .podium-bar { height: 70px; background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%); } /* 2nd - Silver */
+.podium-item:nth-child(2) .podium-bar { height: 100px; background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%); } /* 1st - Gold */
+.podium-item:nth-child(3) .podium-bar { height: 50px; background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%); } /* 3rd - Bronze */
+
+/* Ranking table specific styles */
+.ranking-content table {
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+.ranking-content th, .ranking-content td {
+    padding: var(--space-2);
+    text-align: center;
+}
+
+.ranking-content td:nth-child(1) { /* Medal */
+    font-size: 1.2rem;
+}
+
+.ranking-content tr:nth-child(1) td { background: rgba(255, 215, 0, 0.15); }
+.ranking-content tr:nth-child(2) td { background: rgba(192, 192, 192, 0.15); }
+.ranking-content tr:nth-child(3) td { background: rgba(205, 127, 50, 0.15); }
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let weeklyDataTable, monthlyDataTable;
+    let currentGW = 1;
+    let availableMonths = [];
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize data tables
+        weeklyDataTable = new DataTable('weekly-ranking-table', {
+            searchable: false,
+            sortable: true,
+            paginated: false,
+            exportable: false,
+            hiddenColumns: ['NPOINTS']
+        });
+
+        monthlyDataTable = new DataTable('monthly-ranking-table', {
+            searchable: false,
+            sortable: true,
+            paginated: false,
+            exportable: false,
+            hiddenColumns: ['NPOINTS']
+        });
+
+        // Load initial data
+        const leagueId = document.getElementById('league-id').value;
+        if (leagueId) {
+            initializeSelectors();
+        }
+
+        // Event listeners for selectors
+        document.getElementById('weekly-gw-select').addEventListener('change', loadWeeklyRanking);
+        document.getElementById('monthly-month-select').addEventListener('change', loadMonthlyRanking);
+    });
+
+    async function initializeSelectors() {
+        const leagueId = document.getElementById('league-id').value;
+
+        try {
+            // Get current GW from league info
+            const response = await fetch(`/api/league/${leagueId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                // API returns data inside data.data object
+                const maxGW = data.data.current_gw || 38;
+
+                // Find the latest GW with actual points data
+                currentGW = await findLatestGWWithPoints(maxGW);
+
+                // Populate GW selector - latest GW with data is first
+                const gwSelect = document.getElementById('weekly-gw-select');
+                gwSelect.innerHTML = '';
+                for (let gw = currentGW; gw >= 1; gw--) {
+                    const option = document.createElement('option');
+                    option.value = gw;
+                    option.textContent = `GW ${gw}`;
+                    gwSelect.appendChild(option);
+                }
+                // Ensure first option (latest GW with data) is selected
+                gwSelect.selectedIndex = 0;
+
+                // Populate Month selector based on month mapping
+                const monthMapping = parseMonthMapping();
+                const allMonths = [...new Set(Object.values(monthMapping))].sort((a, b) => a - b);
+
+                // Find the latest month with actual points data
+                const currentMonth = await findLatestMonthWithPoints(allMonths, monthMapping);
+
+                // Only show months up to current month
+                availableMonths = allMonths.filter(m => m <= currentMonth);
+
+                const monthSelect = document.getElementById('monthly-month-select');
+                monthSelect.innerHTML = '';
+                let currentMonthIndex = availableMonths.length - 1; // Default to last
+                availableMonths.forEach((month, index) => {
+                    const option = document.createElement('option');
+                    option.value = month;
+                    option.textContent = `Month ${month}`;
+                    if (month === currentMonth) {
+                        currentMonthIndex = index;
+                    }
+                    monthSelect.appendChild(option);
+                });
+                // Set current month as selected
+                monthSelect.selectedIndex = currentMonthIndex;
+
+                // Load rankings
+                loadWeeklyRanking();
+                loadMonthlyRanking();
+            }
+        } catch (error) {
+            console.error('Error initializing selectors:', error);
+        }
+    }
+
+    async function findLatestGWWithPoints(maxGW) {
+        const filters = getCurrentFilters();
+
+        // Try from maxGW down to find the first GW with points data
+        for (let gw = maxGW; gw >= 1; gw--) {
+            try {
+                const queryString = buildQueryString({...filters, gw: gw});
+                const response = await fetch(`/api/weekly-ranking?${queryString}`);
+                const data = await response.json();
+
+                if (data.success && data.data && data.data.length > 0) {
+                    // Check if any player has points > 0
+                    const hasPoints = data.data.some(row => row.Points > 0);
+                    if (hasPoints) {
+                        return gw;
+                    }
+                }
+            } catch (e) {
+                console.error(`Error checking GW ${gw}:`, e);
+            }
+        }
+        return 1; // Fallback to GW 1
+    }
+
+    async function findLatestMonthWithPoints(months, monthMapping) {
+        const filters = getCurrentFilters();
+
+        // Try from latest month down to find the first month with points data
+        for (let i = months.length - 1; i >= 0; i--) {
+            const month = months[i];
+            try {
+                const queryString = buildQueryString({...filters, month: month});
+                const response = await fetch(`/api/monthly-ranking?${queryString}`);
+                const data = await response.json();
+
+                if (data.success && data.data && data.data.length > 0) {
+                    // Check if any player has points > 0
+                    const hasPoints = data.data.some(row => row.Points > 0);
+                    if (hasPoints) {
+                        return month;
+                    }
+                }
+            } catch (e) {
+                console.error(`Error checking Month ${month}:`, e);
+            }
+        }
+        return months[0] || 1; // Fallback to first month
+    }
+
+    function parseMonthMapping() {
+        // Default month mapping: "1-4,5-9,10-13,14-17,18-21,22-26,27-30,31-34,35-38"
+        const mappingStr = "1-4,5-9,10-13,14-17,18-21,22-26,27-30,31-34,35-38";
+        const mapping = {};
+        const ranges = mappingStr.split(',');
+
+        ranges.forEach((range, index) => {
+            const [start, end] = range.split('-').map(Number);
+            for (let gw = start; gw <= end; gw++) {
+                mapping[gw] = index + 1;
+            }
+        });
+
+        return mapping;
+    }
+
+    async function loadWeeklyRanking(forceRefresh = false) {
+        const filters = getCurrentFilters();
+        const gw = document.getElementById('weekly-gw-select').value;
+        const cacheKey = `weekly_ranking_gw${gw}`;
+
+        try {
+            showLoading('Loading weekly ranking...');
+
+            const queryString = buildQueryString({...filters, gw: gw});
+            const data = await cachedFetch(cacheKey, `/api/weekly-ranking?${queryString}`, forceRefresh);
+
+            if (data.success) {
+                weeklyDataTable.setData(data.data);
+                updateTop3Summary('weekly', data.data, gw);
+            } else {
+                weeklyDataTable.setData([]);
+            }
+        } catch (error) {
+            console.error('Error loading weekly ranking:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    async function loadMonthlyRanking(forceRefresh = false) {
+        const filters = getCurrentFilters();
+        const month = document.getElementById('monthly-month-select').value;
+        const cacheKey = `monthly_ranking_m${month}`;
+
+        try {
+            showLoading('Loading monthly ranking...');
+
+            const queryString = buildQueryString({...filters, month: month});
+            const data = await cachedFetch(cacheKey, `/api/monthly-ranking?${queryString}`, forceRefresh);
+
+            if (data.success) {
+                monthlyDataTable.setData(data.data);
+                updateTop3Summary('monthly', data.data, month);
+            } else {
+                monthlyDataTable.setData([]);
+            }
+        } catch (error) {
+            console.error('Error loading monthly ranking:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function updateTop3Summary(type, data, period) {
+        const summaryContainer = document.getElementById('top3-summary');
+        const cardId = `top3-${type}`;
+
+        // Remove existing card if exists
+        const existingCard = document.getElementById(cardId);
+        if (existingCard) existingCard.remove();
+
+        if (!data || data.length === 0) return;
+
+        // Get top 3
+        const top3 = data.filter(row => row.Rank <= 3).slice(0, 3);
+
+        if (top3.length === 0) return;
+
+        const title = type === 'weekly' ? `🎖️ Top 3 GW ${period}` : `🏅 Top 3 Month ${period}`;
+
+        // Reorder for podium display: 2nd, 1st, 3rd
+        const podiumOrder = [];
+        const first = top3.find(r => r.Rank === 1);
+        const second = top3.find(r => r.Rank === 2);
+        const third = top3.find(r => r.Rank === 3);
+
+        if (second) podiumOrder.push(second);
+        if (first) podiumOrder.push(first);
+        if (third) podiumOrder.push(third);
+
+        const cardHtml = `
+            <div class="top3-card" id="${cardId}">
+                <h4>${title}</h4>
+                <div class="podium">
+                    ${podiumOrder.map((player, idx) => {
+                        // Only first place (Rank 1) is clickable for certificate
+                        const isFirst = player.Rank === 1;
+                        const clickAttr = isFirst ? `onclick="showCertificate('${type}', '${player.Manager}', ${player.Points}, ${period})"` : '';
+                        const clickClass = isFirst ? 'clickable' : '';
+                        return `
+                        <div class="podium-item">
+                            <span class="podium-medal ${clickClass}" ${clickAttr} title="${isFirst ? 'Click to view certificate' : ''}">${player.Medal}</span>
+                            <span class="podium-name" title="${player.Manager}">${player.Manager}</span>
+                            <span class="podium-points">${player.Points} pts</span>
+                            <div class="podium-bar"></div>
+                        </div>
+                    `}).join('')}
+                </div>
+            </div>
+        `;
+
+        // Insert in correct order (weekly first, monthly second)
+        if (type === 'weekly') {
+            summaryContainer.insertAdjacentHTML('afterbegin', cardHtml);
+        } else {
+            summaryContainer.insertAdjacentHTML('beforeend', cardHtml);
+        }
+    }
+
+    // Certificate Modal Functions
+    function showCertificate(type, managerName, points, period) {
+        const modal = document.getElementById('cert-modal-overlay');
+        const certificate = document.getElementById('certificate-content');
+        const certTitle = document.getElementById('cert-title');
+        const certName = document.getElementById('cert-manager-name');
+        const certAchievement = document.getElementById('cert-achievement');
+        const certPoints = document.getElementById('cert-points');
+        const certMedal = document.getElementById('cert-medal');
+        const certDate = document.getElementById('cert-date');
+
+        // Set certificate content based on type
+        if (type === 'weekly') {
+            certTitle.textContent = 'MANAGER OF THE WEEK';
+            certTitle.classList.remove('monthly');
+            certificate.classList.remove('monthly-cert');
+            certificate.classList.add('weekly-cert');
+            certAchievement.textContent = `For achieving 1st place in Gameweek ${period}`;
+        } else {
+            certTitle.textContent = 'MANAGER OF THE MONTH';
+            certTitle.classList.add('monthly');
+            certificate.classList.remove('weekly-cert');
+            certificate.classList.add('monthly-cert');
+            certAchievement.textContent = `For achieving 1st place in Month ${period}`;
+        }
+
+        certName.textContent = managerName;
+        certPoints.textContent = `with ${formatNumber(points)} points`;
+        certMedal.textContent = '🥇';
+        certDate.textContent = `Season 2024/25`;
+
+        // Store data for download
+        modal.dataset.type = type;
+        modal.dataset.manager = managerName;
+        modal.dataset.points = points;
+        modal.dataset.period = period;
+
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeCertModal() {
+        const modal = document.getElementById('cert-modal-overlay');
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeCertModal();
+        }
+    });
+
+    async function downloadCertificate() {
+        const modal = document.getElementById('cert-modal-overlay');
+        const type = modal.dataset.type;
+        const manager = modal.dataset.manager;
+        const period = modal.dataset.period;
+
+        // Use html2canvas to capture the certificate
+        const certElement = document.getElementById('certificate-content');
+
+        if (typeof html2canvas !== 'undefined') {
+            try {
+                const canvas = await html2canvas(certElement, {
+                    backgroundColor: null,
+                    scale: 2
+                });
+
+                const link = document.createElement('a');
+                link.download = `${type === 'weekly' ? 'GW' + period : 'Month' + period}_${manager.replace(/\s+/g, '_')}_certificate.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (error) {
+                console.error('Error generating certificate:', error);
+                alert('Could not generate certificate image. Please try again.');
+            }
+        } else {
+            // Fallback: open print dialog
+            window.print();
+        }
+    }
+
+    // Override reloadPageData (force refresh when filters change)
+    window.reloadPageData = function(filters) {
+        // Clear all ranking caches
+        Object.keys(DataCache._cache).forEach(key => {
+            if (key.includes('weekly_ranking') || key.includes('monthly_ranking')) {
+                delete DataCache._cache[key];
+                delete DataCache._cacheTime[key];
+            }
+        });
+        initializeSelectors();
+    };
+</script>
+
+<!-- html2canvas for certificate download -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+{% endblock %}

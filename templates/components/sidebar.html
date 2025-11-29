@@ -1,0 +1,52 @@
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h2>Filters</h2>
+        <button type="button" class="sidebar-toggle-btn" id="sidebar-collapse-btn" title="Thu gọn">
+            <span>◀</span>
+        </button>
+    </div>
+
+    <div class="sidebar-content">
+        <form id="filters-form" class="filters-form">
+            <!-- League Settings -->
+            <div class="filter-group">
+                <label for="league-id" class="filter-label">League ID</label>
+                <input type="number" id="league-id" name="league_id" class="filter-input"
+                    value="{{ config.DEFAULT_LEAGUE_ID }}" placeholder="Enter League ID">
+            </div>
+
+            <div class="filter-group">
+                <label for="phase" class="filter-label">Phase</label>
+                <input type="number" id="phase" name="phase" class="filter-input" value="{{ config.DEFAULT_PHASE }}"
+                    placeholder="Phase">
+            </div>
+
+    <!-- Optional limit on number of league entries for heavy views (GW points, transfers, etc.) -->
+    <div class="filter-group">
+        <label for="max-entries" class="filter-label">Max Entries (optional)</label>
+        <input type="number" id="max-entries" name="max_entries" class="filter-input"
+               placeholder="e.g. 200">
+    </div>
+
+            <!-- Hidden inputs for GW range (auto-calculated) -->
+            <input type="hidden" id="gw-start" name="gw_start" value="1">
+            <input type="hidden" id="gw-end" name="gw_end" value="38">
+
+            <!-- Hidden input for month mapping (use default) -->
+            <input type="hidden" id="month-mapping" name="month_mapping" value="{{ config.DEFAULT_MONTH_MAPPING }}">
+
+            <!-- Action Buttons -->
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary btn-block">
+                    <span class="btn-icon">🔍</span>
+                    <span>Apply Filters</span>
+                </button>
+
+                <button type="button" id="clear-cache-btn" class="btn btn-secondary btn-block">
+                    <span class="btn-icon">🗑️</span>
+                    <span>Clear Cache</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</aside>

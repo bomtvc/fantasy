@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="fun-stats-page">
+    <!-- Fun Stats Table -->
+    <div class="fun-card">
+        <div class="fun-header">
+            <h3>🎉 Fun Statistics by Gameweek</h3>
+        </div>
+        <div class="fun-content">
+            <div id="fun-stats-table"></div>
+        </div>
+    </div>
+
+    <!-- Fun Insights Summary -->
+    <div class="fun-insights-grid" id="fun-insights-grid"></div>
+</div>
+
+<style>
+.fun-stats-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.fun-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.fun-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+}
+
+.fun-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 1.1rem;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+.fun-content {
+    padding: var(--space-3);
+    overflow-x: auto;
+}
+
+/* Fun Stats Table Styles */
+#fun-stats-table table {
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+#fun-stats-table th {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    color: white;
+    padding: var(--space-2) var(--space-3);
+    white-space: nowrap;
+}
+
+#fun-stats-table td {
+    padding: var(--space-2) var(--space-3);
+    vertical-align: middle;
+}
+
+#fun-stats-table td:first-child {
+    font-weight: 600;
+    background: rgba(var(--color-primary-rgb), 0.1);
+    text-align: center;
+}
+
+/* Column specific styles */
+.best-captain { color: #4caf50; }
+.worst-captain { color: #f44336; }
+.best-bench { color: #2196f3; }
+.best-transfer { color: #4caf50; }
+.worst-transfer { color: #f44336; }
+
+.transfer-positive { color: #4caf50; font-weight: 600; }
+.transfer-negative { color: #f44336; font-weight: 600; }
+
+/* Fun Insights Grid */
+.fun-insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-3);
+}
+
+.fun-insight-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+.fun-insight-card h4 {
+    margin: 0 0 var(--space-3) 0;
+    font-size: 1rem;
+    color: var(--color-text-primary);
+}
+
+.fun-insight-item {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-glass-border);
+}
+
+.fun-insight-item:last-child {
+    border-bottom: none;
+}
+
+.fun-insight-label {
+    color: var(--color-text-secondary);
+}
+
+.fun-insight-value {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.insight-icon {
+    font-size: 1.5rem;
+    margin-right: var(--space-2);
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let funStatsDataTable;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('[Fun Stats] DOMContentLoaded');
+
+        // Initialize data table
+        funStatsDataTable = new DataTable('fun-stats-table', {
+            searchable: false,
+            sortable: true,
+            paginated: false,
+            exportable: true,
+            compactControls: true,
+            columnLabels: function(col) {
+                const labels = {
+                    'GW': 'GW',
+                    'Best_Captain': '👑 Best Captain',
+                    'Worst_Captain': '😢 Worst Captain',
+                    'Best_Bench': '💺 Best Bench',
+                    'Best_Transfer': '📈 Best Transfer',
+                    'Worst_Transfer': '📉 Worst Transfer'
+                };
+                return labels[col] || col;
+            }
+        });
+
+        // Load data
+        const leagueId = document.getElementById('league-id').value;
+        console.log('[Fun Stats] League ID:', leagueId);
+        if (leagueId) {
+            loadFunStats();
+        } else {
+            console.warn('[Fun Stats] No league ID found, skipping load');
+        }
+    });
+
+    async function loadFunStats(forceRefresh = false) {
+        const filters = getCurrentFilters();
+
+        try {
+            showLoading('Loading fun statistics...');
+
+            const queryString = buildQueryString(filters);
+            const data = await cachedFetch('fun_stats', `/api/fun-stats?${queryString}`, forceRefresh);
+
+            if (data.success) {
+                // Format data for display
+                const formattedData = formatFunStatsData(data.data);
+                funStatsDataTable.setData(formattedData);
+
+                // Calculate and display insights
+                calculateFunInsights(data.data);
+            } else {
+                console.error('Error loading fun stats:', data.error);
+                document.getElementById('fun-stats-table').innerHTML =
+                    `<p class="error">Error: ${data.error}</p>`;
+            }
+        } catch (error) {
+            console.error('Error loading fun stats:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function formatFunStatsData(data) {
+        return data.map(row => {
+            return {
+                GW: `GW ${row.GW}`,
+                Best_Captain: formatCaptainCell(row.Best_Captain, 'best'),
+                Worst_Captain: formatCaptainCell(row.Worst_Captain, 'worst'),
+                Best_Bench: row.Best_Bench,
+                Best_Transfer: formatTransferCell(row.Best_Transfer, 'best'),
+                Worst_Transfer: formatTransferCell(row.Worst_Transfer, 'worst')
+            };
+        });
+    }
+
+    function formatCaptainCell(value, type) {
+        if (!value || value === '-') return '-';
+        const className = type === 'best' ? 'best-captain' : 'worst-captain';
+        return `<span class="${className}">${value}</span>`;
+    }
+
+    function formatTransferCell(value, type) {
+        if (!value || value === '-') return '-';
+
+        // Add color based on positive/negative
+        let formatted = value;
+        if (value.includes('+')) {
+            formatted = value.replace(/\((\+\d+)\)/g, '<span class="transfer-positive">($1)</span>');
+        } else if (value.includes('-') && value.includes('(')) {
+            formatted = value.replace(/\((-\d+)\)/g, '<span class="transfer-negative">($1)</span>');
+        }
+
+        const className = type === 'best' ? 'best-transfer' : 'worst-transfer';
+        return formatted;
+    }
+
+    function calculateFunInsights(data) {
+        if (!data || data.length === 0) return;
+
+        // Count appearances
+        const captainCounts = {};
+        const benchCounts = {};
+        const transferCounts = { best: {}, worst: {} };
+
+        data.forEach(row => {
+            // Extract managers from Best_Captain
+            extractManagers(row.Best_Captain).forEach(m => {
+                captainCounts[m] = (captainCounts[m] || 0) + 1;
+            });
+
+            // Extract managers from Best_Bench
+            extractManagers(row.Best_Bench).forEach(m => {
+                benchCounts[m] = (benchCounts[m] || 0) + 1;
+            });
+
+            // Extract managers from Best/Worst Transfer
+            extractManagers(row.Best_Transfer).forEach(m => {
+                transferCounts.best[m] = (transferCounts.best[m] || 0) + 1;
+            });
+            extractManagers(row.Worst_Transfer).forEach(m => {
+                transferCounts.worst[m] = (transferCounts.worst[m] || 0) + 1;
+            });
+        });
+
+        // Get top managers
+        const topCaptain = getTopEntries(captainCounts, 3);
+        const topBench = getTopEntries(benchCounts, 3);
+        const topBestTransfer = getTopEntries(transferCounts.best, 3);
+        const topWorstTransfer = getTopEntries(transferCounts.worst, 3);
+
+        const insightsGrid = document.getElementById('fun-insights-grid');
+        insightsGrid.innerHTML = `
+            <div class="fun-insight-card">
+                <h4><span class="insight-icon">👑</span>Best Captain Picks</h4>
+                ${topCaptain.map((e, i) => `
+                    <div class="fun-insight-item">
+                        <span class="fun-insight-label">${['🥇','🥈','🥉'][i] || ''} ${e.name}</span>
+                        <span class="fun-insight-value">${e.count} times</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="fun-insight-card">
+                <h4><span class="insight-icon">💺</span>Best Bench Points</h4>
+                ${topBench.map((e, i) => `
+                    <div class="fun-insight-item">
+                        <span class="fun-insight-label">${['🥇','🥈','🥉'][i] || ''} ${e.name}</span>
+                        <span class="fun-insight-value">${e.count} times</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="fun-insight-card">
+                <h4><span class="insight-icon">📈</span>Best Transfers</h4>
+                ${topBestTransfer.map((e, i) => `
+                    <div class="fun-insight-item">
+                        <span class="fun-insight-label">${['🥇','🥈','🥉'][i] || ''} ${e.name}</span>
+                        <span class="fun-insight-value">${e.count} times</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="fun-insight-card">
+                <h4><span class="insight-icon">📉</span>Worst Transfers</h4>
+                ${topWorstTransfer.map((e, i) => `
+                    <div class="fun-insight-item">
+                        <span class="fun-insight-label">${['🥇','🥈','🥉'][i] || ''} ${e.name}</span>
+                        <span class="fun-insight-value">${e.count} times</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function extractManagers(str) {
+        if (!str || str === '-') return [];
+        // Extract manager names (before the dash or parenthesis)
+        const parts = str.split(' | ');
+        return parts.map(p => {
+            const match = p.match(/^([^-\(]+)/);
+            return match ? match[1].trim() : p.trim();
+        });
+    }
+
+    function getTopEntries(counts, limit) {
+        return Object.entries(counts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, limit)
+            .map(([name, count]) => ({ name, count }));
+    }
+
+    // Override reloadPageData (force refresh when filters change)
+    window.reloadPageData = function(filters) {
+        DataCache.clear('fun_stats');
+        loadFunStats(true);
+    };
+</script>
+{% endblock %}

@@ -1,0 +1,595 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="transfer-page">
+    <!-- Transfer History Table -->
+    <div class="transfer-card">
+        <div class="transfer-header">
+            <h3>🔄 Transfer History by Gameweek</h3>
+            <div class="transfer-legend">
+                <span class="legend-item"><span class="in-points">In(pts)</span> - <span class="out-points">Out(pts)</span></span>
+            </div>
+            <div class="transfer-gw-selector" id="transfer-gw-selector"></div>
+        </div>
+        <div class="transfer-content">
+            <div id="transfer-table"></div>
+        </div>
+    </div>
+
+    <!-- Transfer Statistics -->
+    <div class="transfer-stats-grid" id="transfer-stats-grid"></div>
+</div>
+
+<style>
+.transfer-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.transfer-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.transfer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.transfer-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 1.1rem;
+}
+
+.transfer-legend {
+    display: flex;
+    gap: var(--space-3);
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.9);
+}
+
+.transfer-gw-selector {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.9);
+}
+
+.in-points { color: #4caf50; font-weight: 600; }
+.out-points { color: #f44336; font-weight: 600; }
+
+.transfer-content {
+    padding: var(--space-3);
+    overflow-x: auto;
+}
+
+/* Transfer Table Styles */
+#transfer-table table {
+    width: 100%;
+    font-size: 0.8rem;
+}
+
+#transfer-table th {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    color: white;
+    padding: var(--space-2);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+}
+
+#transfer-table td {
+    padding: var(--space-2);
+    vertical-align: middle;
+    min-width: 150px;
+}
+
+#transfer-table td:first-child,
+#transfer-table td:nth-child(2) {
+    position: sticky;
+    left: 0;
+    background: var(--color-surface);
+    z-index: 1;
+    min-width: 100px;
+}
+
+#transfer-table td:first-child { left: 0; }
+#transfer-table td:nth-child(2) { left: 100px; border-right: 2px solid var(--color-glass-border); }
+
+.transfer-cell {
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.transfer-cell .transfer-item {
+    display: block;
+    padding: 2px 0;
+    border-bottom: 1px dashed var(--color-glass-border);
+}
+
+.transfer-cell .transfer-item:last-child {
+    border-bottom: none;
+}
+
+.player-in { color: #4caf50; font-weight: 500; }
+.player-out { color: #f44336; font-weight: 500; }
+.points-positive { color: #4caf50; }
+.points-negative { color: #f44336; }
+
+/* Transfer Stats Grid */
+.transfer-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-3);
+}
+
+.transfer-stat-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+.transfer-stat-card h4 {
+    margin: 0 0 var(--space-3) 0;
+    font-size: 1rem;
+    color: var(--color-text-primary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.transfer-stat-item {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-glass-border);
+}
+
+.transfer-stat-item:last-child {
+    border-bottom: none;
+}
+
+.transfer-stat-label {
+    color: var(--color-text-secondary);
+}
+
+.transfer-stat-value {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.total-transfers-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.total-transfers-badge .value {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.total-transfers-badge .label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+/* Error and Info Messages */
+.error-message {
+    padding: var(--space-4);
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: var(--radius-md);
+    text-align: center;
+    color: #f44336;
+}
+
+.error-message p {
+    margin: 0 0 var(--space-2) 0;
+}
+
+.error-detail {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    font-family: monospace;
+}
+
+.info-message {
+    padding: var(--space-4);
+    background: rgba(33, 150, 243, 0.1);
+    border: 1px solid rgba(33, 150, 243, 0.3);
+    border-radius: var(--radius-md);
+    text-align: center;
+    color: #2196f3;
+}
+
+.retry-btn {
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.retry-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let transferDataTable;
+    let transferRawData = [];
+    let transferAvailableGWs = [];
+    let transferCurrentGw = null;
+    let transferLastResponse = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('[Transfer History] DOMContentLoaded');
+
+        // Initialize data table
+        transferDataTable = new DataTable('transfer-table', {
+            searchable: true,
+            sortable: true,
+            paginated: false,
+            exportable: true,
+            compactControls: true
+        });
+
+        // Load data
+        const leagueId = document.getElementById('league-id').value;
+        console.log('[Transfer History] League ID:', leagueId);
+        if (leagueId) {
+            loadTransferHistory();
+        } else {
+            console.warn('[Transfer History] No league ID found, skipping load');
+            document.getElementById('transfer-table').innerHTML =
+                '<p class="info-message">Please select a league to view transfer history.</p>';
+        }
+    });
+
+    async function loadTransferHistory(forceRefresh = false) {
+        const filters = getCurrentFilters();
+
+        if (!filters.league_id) {
+            document.getElementById('transfer-table').innerHTML =
+                '<p class="info-message">Please select a league to view transfer history.</p>';
+            return;
+        }
+
+        try {
+            showLoading('Loading transfer history... This may take a while for large leagues.');
+
+            const queryString = buildQueryString(filters);
+
+            // Use AbortController for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+
+            let data;
+
+            // Check cache first (if not forcing refresh)
+            if (!forceRefresh) {
+                data = DataCache.get('transfer_history');
+                if (data) {
+                    console.log('[Transfer History] Using cached data');
+                    clearTimeout(timeoutId);
+                    processTransferData(data);
+                    hideLoading();
+                    return;
+                }
+            }
+
+            // Fetch from API
+            console.log('[Transfer History] Fetching from API...');
+            const response = await fetch(`/api/transfer-history?${queryString}`, {
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            data = await response.json();
+
+            if (data.success) {
+                // Cache the data
+                DataCache.set('transfer_history', data);
+                processTransferData(data);
+            } else {
+                console.error('Error loading transfers:', data.error);
+                document.getElementById('transfer-table').innerHTML =
+                    `<div class="error-message">
+                        <p>⚠️ Error loading transfer data: ${data.error}</p>
+                        <button onclick="loadTransferHistory(true)" class="retry-btn">🔄 Retry</button>
+                    </div>`;
+                document.getElementById('transfer-stats-grid').innerHTML = '';
+            }
+        } catch (error) {
+            console.error('Error loading transfers:', error);
+            let errorMessage = 'Failed to load transfer data.';
+
+            if (error.name === 'AbortError') {
+                errorMessage = 'Request timed out. The data may be too large to process quickly.';
+            } else if (error.message.includes('NetworkError')) {
+                errorMessage = 'Network error. Please check your connection.';
+            }
+
+            document.getElementById('transfer-table').innerHTML =
+                `<div class="error-message">
+                    <p>⚠️ ${errorMessage}</p>
+                    <p class="error-detail">${error.message}</p>
+                    <button onclick="loadTransferHistory(true)" class="retry-btn">🔄 Retry</button>
+                </div>`;
+            document.getElementById('transfer-stats-grid').innerHTML = '';
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function processTransferData(data) {
+        // Check if data is valid
+        if (!data || !data.data) {
+            console.warn('[Transfer History] No data to process');
+            document.getElementById('transfer-table').innerHTML =
+                '<p class="info-message">No transfer data available yet this season.</p>';
+            document.getElementById('transfer-stats-grid').innerHTML = '';
+            return;
+        }
+
+        // Check if there are any transfers
+        if (data.data.length === 0) {
+            document.getElementById('transfer-table').innerHTML =
+                '<p class="info-message">No transfers have been made yet this season.</p>';
+            document.getElementById('transfer-stats-grid').innerHTML = '';
+            return;
+        }
+
+        // Store raw data for per-GW statistics
+        transferLastResponse = data;
+        transferRawData = data.raw_data || [];
+
+        // Determine available GWs from columns
+        const columns = data.columns || [];
+        const gwColumns = columns.filter(c => c.startsWith('GW'));
+        const availableGws = gwColumns
+            .map(c => parseInt(c.replace('GW', ''), 10))
+            .filter(n => !isNaN(n))
+            .sort((a, b) => a - b);
+
+        if (!availableGws.length) {
+            document.getElementById('transfer-table').innerHTML =
+                '<p class="info-message">No transfer data available by gameweek.</p>';
+            document.getElementById('transfer-stats-grid').innerHTML = '';
+            return;
+        }
+
+        // Pick default GW = latest GW that has transfers
+        let defaultGw = null;
+        if (data.stats && data.stats.transfers_by_gw) {
+            const gwNums = Object.keys(data.stats.transfers_by_gw)
+                .map(k => parseInt(k, 10))
+                .filter(n => !isNaN(n));
+            if (gwNums.length) {
+                defaultGw = Math.max(...gwNums);
+            }
+        }
+        if (!defaultGw) {
+            defaultGw = availableGws[availableGws.length - 1];
+        }
+
+        transferAvailableGWs = availableGws;
+        transferCurrentGw = defaultGw;
+
+        // Render GW selector
+        renderGwSelector(transferAvailableGWs, transferCurrentGw);
+
+        // Render table and stats for selected GW only
+        renderTransferTableForGw(data, transferCurrentGw);
+        renderTransferStatsForGw(transferRawData, transferCurrentGw);
+
+        console.log('[Transfer History] Data loaded successfully for GW', transferCurrentGw);
+    }
+
+    function renderGwSelector(availableGws, selectedGw) {
+        const container = document.getElementById('transfer-gw-selector');
+        if (!container || !availableGws.length) return;
+
+        const options = availableGws.map(gw =>
+            `<option value="${gw}" ${gw === selectedGw ? 'selected' : ''}>GW ${gw}</option>`
+        ).join('');
+
+        container.innerHTML = `
+            <label for="transfer-gw-select" style="color: rgba(255,255,255,0.9); font-size: 0.85rem;">
+                Gameweek:
+            </label>
+            <select id="transfer-gw-select" class="filter-input" style="min-width: 80px;">
+                ${options}
+            </select>
+        `;
+
+        const select = document.getElementById('transfer-gw-select');
+        if (select) {
+            select.addEventListener('change', (e) => {
+                const gw = parseInt(e.target.value, 10);
+                if (!isNaN(gw)) {
+                    transferCurrentGw = gw;
+                    if (transferLastResponse) {
+                        renderTransferTableForGw(transferLastResponse, transferCurrentGw);
+                        renderTransferStatsForGw(transferRawData, transferCurrentGw);
+                    }
+                }
+            });
+        }
+    }
+
+    function renderTransferTableForGw(data, gw) {
+        if (!data || !data.data || !data.columns) return;
+
+        const gwKey = `GW${gw}`;
+        const rows = data.data;
+
+        const formattedData = rows.map(row => {
+            return {
+                Manager: row.Manager,
+                Team: row.Team,
+                [gwKey]: formatTransferCell(row[gwKey])
+            };
+        });
+
+        const columnOrder = ['Manager', 'Team', gwKey];
+        transferDataTable.setColumnOrder(columnOrder);
+        transferDataTable.setData(formattedData);
+    }
+
+    function renderTransferStatsForGw(rawData, gw) {
+        const stats = buildGwStats(rawData, gw);
+        displayTransferStats(stats, gw);
+    }
+
+    function buildGwStats(rawData, gw) {
+        const stats = {
+            total_transfers: 0,
+            transfers_by_manager: {},
+            most_transferred_in: {},
+            most_transferred_out: {}
+        };
+
+        if (!Array.isArray(rawData)) return stats;
+
+        rawData.forEach(row => {
+            if (!row || row.GW !== gw) return;
+
+            stats.total_transfers += 1;
+
+            if (row.Manager) {
+                stats.transfers_by_manager[row.Manager] = (stats.transfers_by_manager[row.Manager] || 0) + 1;
+            }
+
+            if (row.Player_In) {
+                stats.most_transferred_in[row.Player_In] = (stats.most_transferred_in[row.Player_In] || 0) + 1;
+            }
+
+            if (row.Player_Out) {
+                stats.most_transferred_out[row.Player_Out] = (stats.most_transferred_out[row.Player_Out] || 0) + 1;
+            }
+        });
+
+        return stats;
+    }
+
+    function formatTransferCell(value) {
+        if (!value || value === '-') return '<span style="color: #999;">-</span>';
+
+        // Handle multiple transfers separated by |
+        const transfers = value.split(' | ');
+
+        return transfers.map(t => {
+            // Format: "PlayerIn (pts) - PlayerOut (pts)"
+            const match = t.match(/(.+?)\s*\((\d+)\)\s*-\s*(.+?)\s*\((\d+)\)/);
+            if (match) {
+                const [_, playerIn, ptsIn, playerOut, ptsOut] = match;
+                const ptsInNum = parseInt(ptsIn);
+                const ptsOutNum = parseInt(ptsOut);
+                const diff = ptsInNum - ptsOutNum;
+                const diffClass = diff > 0 ? 'points-positive' : diff < 0 ? 'points-negative' : '';
+                const diffStr = diff > 0 ? `+${diff}` : diff.toString();
+
+                return `<span class="transfer-item">
+                    <span class="player-in">${playerIn}</span>
+                    <span class="points-positive">(${ptsIn})</span> ←
+                    <span class="player-out">${playerOut}</span>
+                    <span class="points-negative">(${ptsOut})</span>
+                    <span class="${diffClass}" style="margin-left: 4px;">[${diffStr}]</span>
+                </span>`;
+            }
+            return `<span class="transfer-item">${t}</span>`;
+        }).join('');
+    }
+
+    function displayTransferStats(stats, gw = null) {
+        if (!stats) return;
+
+        const grid = document.getElementById('transfer-stats-grid');
+
+        // Top managers by transfers
+        const topManagers = Object.entries(stats.transfers_by_manager || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+
+        // Most transferred in
+        const topIn = Object.entries(stats.most_transferred_in || {}).slice(0, 5);
+
+        // Most transferred out
+        const topOut = Object.entries(stats.most_transferred_out || {}).slice(0, 5);
+
+        const gwSuffix = gw ? ` (GW ${gw})` : '';
+
+        grid.innerHTML = `
+            <div class="total-transfers-badge">
+                <div class="value">${stats.total_transfers || 0}</div>
+                <div class="label">Total Transfers${gwSuffix}</div>
+            </div>
+
+            <div class="transfer-stat-card">
+                <h4>👤 Most Active Managers${gwSuffix}</h4>
+                ${topManagers.map((e, i) => `
+                    <div class="transfer-stat-item">
+                        <span class="transfer-stat-label">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]} ${e[0]}</span>
+                        <span class="transfer-stat-value">${e[1]} transfers</span>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="transfer-stat-card">
+                <h4>📈 Most Transferred In${gwSuffix}</h4>
+                ${topIn.map((e, i) => `
+                    <div class="transfer-stat-item">
+                        <span class="transfer-stat-label">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]} ${e[0]}</span>
+                        <span class="transfer-stat-value player-in">${e[1]}x</span>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="transfer-stat-card">
+                <h4>📉 Most Transferred Out${gwSuffix}</h4>
+                ${topOut.map((e, i) => `
+                    <div class="transfer-stat-item">
+                        <span class="transfer-stat-label">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]} ${e[0]}</span>
+                        <span class="transfer-stat-value player-out">${e[1]}x</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    // Override reloadPageData (force refresh when filters change)
+    window.reloadPageData = function(filters) {
+        DataCache.clear('transfer_history');
+        loadTransferHistory(true);
+    };
+</script>
+{% endblock %}
