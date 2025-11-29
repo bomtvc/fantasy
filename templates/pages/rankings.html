@@ -7,7 +7,9 @@
         <div class="cert-modal" onclick="event.stopPropagation()">
             <button class="cert-close-btn" onclick="closeCertModal()">&times;</button>
             <div class="certificate" id="certificate-content">
-                <!-- Only manager name displayed on background image -->
+                <!-- Title line for weekly cert (hidden for monthly) -->
+                <div class="cert-title" id="cert-title"></div>
+                <!-- Manager name -->
                 <h2 class="cert-name" id="cert-manager-name">Manager Name</h2>
             </div>
             <button class="cert-download-btn" onclick="downloadCertificate()">
@@ -125,7 +127,29 @@
     background-image: url('/static/images/cert_month_bg.png');
 }
 
-/* Manager name - positioned below "This certificate is presented to" */
+/* Title line for weekly cert (MANAGER OF THE WEEK GW X) */
+.certificate .cert-title {
+    position: absolute;
+    top: 25%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #FFFFFF;
+    text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+    text-align: center;
+    white-space: nowrap;
+    font-family: 'Georgia', serif;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+}
+
+/* Hide title for monthly cert */
+.certificate.monthly-cert .cert-title {
+    display: none;
+}
+
+/* Manager name - positioned below title */
 .certificate .cert-name {
     position: absolute;
     top: 35%;
@@ -610,17 +634,22 @@
         const modal = document.getElementById('cert-modal-overlay');
         const certificate = document.getElementById('certificate-content');
         const certName = document.getElementById('cert-manager-name');
+        const certTitle = document.getElementById('cert-title');
 
-        // Set certificate background based on type
+        // Set certificate background and title based on type
         if (type === 'weekly') {
             certificate.classList.remove('monthly-cert');
             certificate.classList.add('weekly-cert');
+            // Show title for weekly: MANAGER OF THE WEEK GW{X}
+            certTitle.textContent = `MANAGER OF THE WEEK GW${period}`;
         } else {
             certificate.classList.remove('weekly-cert');
             certificate.classList.add('monthly-cert');
+            // Hide title for monthly (CSS handles this)
+            certTitle.textContent = '';
         }
 
-        // Only display manager name
+        // Display manager name
         certName.textContent = managerName;
 
         // Store data for download
