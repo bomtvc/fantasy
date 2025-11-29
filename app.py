@@ -1869,6 +1869,22 @@ def main():
     """
     st.title("⚽ RSC Fantasy League")
     st.markdown("Fantasy Premier League League Data Analysis")
+    st.markdown("""
+    <div style="
+        background-color:#ffeb3b;
+        padding:15px;
+        border-radius:10px;
+        font-size:18px;
+        font-weight:bold;
+        text-align:center;
+        border:2px solid #fbc02d;
+    ">
+    🚀 CHUYỂN NHÀ NÀO **CÁC KHẦY** tại đây:<br>
+    <a href='https://rscfpl.xyz/' target='_blank' style='color:#d32f2f; font-size:20px;'>
+    👉 NHẤN VÀO ĐỂ SANG NHÀ MỚI 👈
+    </a>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Sidebar for options
     st.sidebar.header("⚙️ Configuration")
