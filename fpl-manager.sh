@@ -513,8 +513,21 @@ configure_firewall() {
     print_color "${BLUE}[FIREWALL SETUP]${NC} Cấu hình Firewall cho Oracle Cloud / VPS..."
     echo ""
 
-    # 1. Cấu hình UFW
-    print_color "${CYAN}[1/3]${NC} Cấu hình UFW..."
+    # 1. Disable Oracle Cloud iptables restore services
+    print_color "${CYAN}[1/4]${NC} Disable Oracle Cloud iptables services..."
+
+    # Oracle Cloud có các service restore iptables khi reboot
+    sudo systemctl stop iptables.service 2>/dev/null
+    sudo systemctl disable iptables.service 2>/dev/null
+    sudo systemctl mask iptables.service 2>/dev/null
+
+    # Disable netfilter-persistent tạm thời để clear rules
+    sudo systemctl stop netfilter-persistent 2>/dev/null
+
+    print_color "${GREEN}  ✓ Disabled Oracle iptables services${NC}"
+
+    # 2. Cấu hình UFW
+    print_color "${CYAN}[2/4]${NC} Cấu hình UFW..."
 
     # Cài UFW nếu chưa có
     if ! command -v ufw &> /dev/null; then
@@ -533,8 +546,8 @@ configure_firewall() {
     echo "y" | sudo ufw enable >/dev/null 2>&1
     print_color "${GREEN}  ✓ UFW đã mở ports: 22, 80, 443, 5000${NC}"
 
-    # 2. Tắt iptables (Oracle Cloud issue)
-    print_color "${CYAN}[2/3]${NC} Tắt iptables firewall (Oracle Cloud fix)..."
+    # 3. Clear iptables hoàn toàn
+    print_color "${CYAN}[3/4]${NC} Clear iptables firewall..."
 
     # Flush all rules
     sudo iptables -F
@@ -549,19 +562,33 @@ configure_firewall() {
     sudo iptables -P FORWARD ACCEPT
     sudo iptables -P OUTPUT ACCEPT
 
-    print_color "${GREEN}  ✓ iptables đã được tắt${NC}"
+    # Clear ip6tables
+    sudo ip6tables -F 2>/dev/null
+    sudo ip6tables -X 2>/dev/null
+    sudo ip6tables -P INPUT ACCEPT 2>/dev/null
+    sudo ip6tables -P FORWARD ACCEPT 2>/dev/null
+    sudo ip6tables -P OUTPUT ACCEPT 2>/dev/null
 
-    # 3. Lưu cấu hình iptables
-    print_color "${CYAN}[3/3]${NC} Lưu cấu hình (persistent)..."
+    print_color "${GREEN}  ✓ iptables đã được clear${NC}"
+
+    # 4. Lưu rules mới (ACCEPT all) - ghi đè rules cũ
+    print_color "${CYAN}[4/4]${NC} Lưu cấu hình persistent..."
 
     # Cài iptables-persistent
     echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
     echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
     sudo apt install -y iptables-persistent >/dev/null 2>&1
 
-    # Lưu rules
-    sudo netfilter-persistent save >/dev/null 2>&1
-    print_color "${GREEN}  ✓ Cấu hình đã được lưu${NC}"
+    # Ghi đè file rules (quan trọng - đây là file được load khi reboot)
+    sudo sh -c 'iptables-save > /etc/iptables/rules.v4'
+    sudo sh -c 'ip6tables-save > /etc/iptables/rules.v6'
+
+    # Enable và start netfilter-persistent với rules mới
+    sudo systemctl unmask netfilter-persistent 2>/dev/null
+    sudo systemctl enable netfilter-persistent 2>/dev/null
+    sudo systemctl start netfilter-persistent 2>/dev/null
+
+    print_color "${GREEN}  ✓ Cấu hình đã được lưu (sẽ giữ sau reboot)${NC}"
 
     # Hiển thị kết quả
     echo ""
