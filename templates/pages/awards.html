@@ -100,6 +100,13 @@
     border-left: 3px solid #ffc107 !important;
 }
 
+.monthly-winner-cell.in-progress {
+    background: linear-gradient(135deg, #e2e3e5 0%, #d6d8db 100%) !important;
+    color: #6c757d;
+    border-left: 3px solid #6c757d !important;
+    font-style: italic;
+}
+
 /* Leaderboard Table Styles */
 #awards-leaderboard-table table {
     width: 100%;
@@ -206,6 +213,32 @@
 {% block extra_scripts %}
 <script>
     let summaryDataTable, leaderboardDataTable;
+    let currentGW = 38; // Will be updated from API
+
+    // Parse month mapping to get GW ranges for each month
+    function parseMonthMapping() {
+        const mappingStr = document.getElementById('month-mapping')?.value || "1-4,5-8,9-12,13-16,17-20,21-24,25-28,29-32,33-36,37-38";
+        const mapping = {};
+        const ranges = mappingStr.split(',');
+
+        ranges.forEach((range, index) => {
+            const [start, end] = range.split('-').map(Number);
+            mapping[index + 1] = { start, end };
+        });
+
+        return mapping;
+    }
+
+    // Get current month based on currentGW
+    function getCurrentMonth(currentGW) {
+        const monthMapping = parseMonthMapping();
+        for (const [month, range] of Object.entries(monthMapping)) {
+            if (currentGW >= range.start && currentGW <= range.end) {
+                return parseInt(month);
+            }
+        }
+        return Object.keys(monthMapping).length;
+    }
 
     document.addEventListener('DOMContentLoaded', function() {
         // Initialize data tables
@@ -242,6 +275,17 @@
         try {
             showLoading('Loading awards data...');
 
+            // Fetch current GW first
+            try {
+                const gwResponse = await fetch('/api/current-gw');
+                const gwData = await gwResponse.json();
+                if (gwData.success && gwData.current_gw) {
+                    currentGW = gwData.current_gw;
+                }
+            } catch (e) {
+                console.warn('Could not fetch current GW, using default');
+            }
+
             // Load both tables in parallel with cache
             const [summaryData, leaderboardData] = await Promise.all([
                 cachedFetch('awards_summary', `/api/awards-summary?${buildQueryString(filters)}`, forceRefresh),
@@ -249,7 +293,9 @@
             ]);
 
             if (summaryData.success) {
-                renderCustomSummaryTable(summaryData.data);
+                // Filter data to only show GW <= currentGW
+                const filteredData = summaryData.data.filter(row => row.GW <= currentGW);
+                renderCustomSummaryTable(filteredData, currentGW);
             }
 
             if (leaderboardData.success) {
@@ -263,20 +309,26 @@
         }
     }
 
-    function renderCustomSummaryTable(data) {
+    function renderCustomSummaryTable(data, currentGW) {
         if (!data || data.length === 0) {
             document.getElementById('awards-summary-table').innerHTML = '<p>No data available</p>';
             return;
         }
 
-        // Group by month for merged cells
+        const currentMonth = getCurrentMonth(currentGW);
+        const monthMapping = parseMonthMapping();
+
+        // Group by month for merged cells - only include months up to currentMonth
         const monthGroups = {};
         data.forEach(row => {
             const month = row.Month;
-            if (!monthGroups[month]) {
-                monthGroups[month] = [];
+            // Only include months <= currentMonth
+            if (month <= currentMonth) {
+                if (!monthGroups[month]) {
+                    monthGroups[month] = [];
+                }
+                monthGroups[month].push(row);
             }
-            monthGroups[month].push(row);
         });
 
         let html = '<table><thead><tr>';
@@ -289,7 +341,11 @@
 
         sortedMonths.forEach(month => {
             const monthRows = monthGroups[month];
-            const monthWinner = monthRows[0]?.Monthly_Winner || '';
+            const monthRange = monthMapping[month];
+
+            // Check if this month is complete (all GWs played)
+            const isMonthComplete = currentGW >= monthRange.end;
+            const monthWinner = isMonthComplete ? (monthRows[0]?.Monthly_Winner || '') : '🔄 In Progress';
 
             monthRows.forEach((row, idx) => {
                 html += '<tr>';
@@ -299,7 +355,8 @@
                 // Monthly winner cell (merged)
                 if (idx === 0) {
                     const rowspan = monthRows.length;
-                    html += `<td class="monthly-winner-cell" rowspan="${rowspan}">${monthWinner}</td>`;
+                    const cellClass = isMonthComplete ? 'monthly-winner-cell' : 'monthly-winner-cell in-progress';
+                    html += `<td class="${cellClass}" rowspan="${rowspan}">${monthWinner}</td>`;
                 }
 
                 html += '</tr>';

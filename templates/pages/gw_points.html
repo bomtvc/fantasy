@@ -11,6 +11,7 @@
 <script>
     // GW Points Page Logic
     let gwDataTable;
+    let currentGW = 38; // Will be updated from API
 
     document.addEventListener('DOMContentLoaded', function () {
         // Initialize data table
@@ -38,6 +39,27 @@
         loadGWPoints(true);
     };
 
+    // Get columns to hide (GW > currentGW)
+    function getHiddenGWColumns(data, currentGW) {
+        if (!data || data.length === 0) return ['Team_ID'];
+
+        const hiddenCols = ['Team_ID'];
+        const firstRow = data[0];
+
+        // Find GW columns that are > currentGW
+        Object.keys(firstRow).forEach(col => {
+            const match = col.match(/^GW(\d+)$/);
+            if (match) {
+                const gwNum = parseInt(match[1]);
+                if (gwNum > currentGW) {
+                    hiddenCols.push(col);
+                }
+            }
+        });
+
+        return hiddenCols;
+    }
+
     async function loadGWPoints(forceRefresh = false) {
         const filters = getCurrentFilters();
 
@@ -51,10 +73,25 @@
         try {
             showLoading('Loading GW points...');
 
+            // Fetch current GW first
+            try {
+                const gwResponse = await fetch('/api/current-gw');
+                const gwData = await gwResponse.json();
+                if (gwData.success && gwData.current_gw) {
+                    currentGW = gwData.current_gw;
+                }
+            } catch (e) {
+                console.warn('Could not fetch current GW, using default');
+            }
+
             const queryString = buildQueryString(filters);
             const data = await cachedFetch('gw_points', `/api/gw-points?${queryString}`, forceRefresh);
 
             if (data.success) {
+                // Update hidden columns based on current GW
+                const hiddenCols = getHiddenGWColumns(data.data, currentGW);
+                gwDataTable.options.hiddenColumns = hiddenCols;
+
                 gwDataTable.setData(data.data);
                 showToast('GW points loaded successfully', 'success');
             } else {

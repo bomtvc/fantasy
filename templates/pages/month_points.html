@@ -11,6 +11,7 @@
 <script>
     // Month Points Page Logic
     let monthDataTable;
+    let currentGW = 38; // Will be updated from API
 
     // Custom column labels for month points
     function monthColumnLabels(colName) {
@@ -23,6 +24,55 @@
             return colName.replace('Month_', '').replace('_Transfers', 'T');
         }
         return null; // Use default formatting
+    }
+
+    // Parse month mapping to get GW ranges for each month
+    function parseMonthMapping() {
+        const mappingStr = document.getElementById('month-mapping')?.value || "1-4,5-8,9-12,13-16,17-20,21-24,25-28,29-32,33-36,37-38";
+        const mapping = {};
+        const ranges = mappingStr.split(',');
+
+        ranges.forEach((range, index) => {
+            const [start, end] = range.split('-').map(Number);
+            mapping[index + 1] = { start, end };
+        });
+
+        return mapping;
+    }
+
+    // Get current month based on currentGW
+    function getCurrentMonth(currentGW) {
+        const monthMapping = parseMonthMapping();
+        for (const [month, range] of Object.entries(monthMapping)) {
+            if (currentGW >= range.start && currentGW <= range.end) {
+                return parseInt(month);
+            }
+        }
+        // If currentGW is beyond all ranges, return last month
+        return Object.keys(monthMapping).length;
+    }
+
+    // Get columns to hide (months > currentMonth)
+    function getHiddenMonthColumns(data, currentGW) {
+        if (!data || data.length === 0) return ['Team_ID', 'Rank', 'Total'];
+
+        const hiddenCols = ['Team_ID', 'Rank', 'Total'];
+        const currentMonth = getCurrentMonth(currentGW);
+        const firstRow = data[0];
+
+        // Find Month columns that are > currentMonth
+        Object.keys(firstRow).forEach(col => {
+            // Match Month_X or Month_X_Transfers
+            const monthMatch = col.match(/^Month_(\d+)(_Transfers)?$/);
+            if (monthMatch) {
+                const monthNum = parseInt(monthMatch[1]);
+                if (monthNum > currentMonth) {
+                    hiddenCols.push(col);
+                }
+            }
+        });
+
+        return hiddenCols;
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -65,10 +115,25 @@
         try {
             showLoading('Loading month points...');
 
+            // Fetch current GW first
+            try {
+                const gwResponse = await fetch('/api/current-gw');
+                const gwData = await gwResponse.json();
+                if (gwData.success && gwData.current_gw) {
+                    currentGW = gwData.current_gw;
+                }
+            } catch (e) {
+                console.warn('Could not fetch current GW, using default');
+            }
+
             const queryString = buildQueryString(filters);
             const data = await cachedFetch('month_points', `/api/month-points?${queryString}`, forceRefresh);
 
             if (data.success) {
+                // Update hidden columns based on current month
+                const hiddenCols = getHiddenMonthColumns(data.data, currentGW);
+                monthDataTable.options.hiddenColumns = hiddenCols;
+
                 monthDataTable.setData(data.data);
                 showToast('Month points loaded successfully', 'success');
             } else {
