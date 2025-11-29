@@ -46,6 +46,7 @@ show_menu() {
     printf "  ${GREEN}%-16s${NC} - %s\n" "nginx-reload" "Reload Nginx"
     printf "  ${GREEN}%-16s${NC} - %s\n" "nginx-check" "Kiểm tra Nginx và static files"
     printf "  ${GREEN}%-16s${NC} - %s\n" "ssl" "Cài đặt SSL với Let's Encrypt"
+    printf "  ${GREEN}%-16s${NC} - %s\n" "firewall" "Mở ports UFW + tắt iptables (Oracle Cloud)"
     printf "  ${GREEN}%-16s${NC} - %s\n" "fix-permissions" "Sửa lỗi Permission Denied"
     printf "  ${GREEN}%-16s${NC} - %s\n" "uninstall" "Gỡ bỏ hoàn toàn service"
     printf "  ${GREEN}%-16s${NC} - %s\n" "uninstall-nginx" "Gỡ bỏ cấu hình Nginx"
@@ -509,6 +510,80 @@ uninstall_nginx() {
     print_color "${CYAN}Truy cập trực tiếp:${NC} http://$IP:5000"
 }
 
+# Firewall - Mở ports UFW + tắt iptables
+configure_firewall() {
+    show_banner
+    print_color "${BLUE}[FIREWALL SETUP]${NC} Cấu hình Firewall cho Oracle Cloud / VPS..."
+    echo ""
+
+    # 1. Cấu hình UFW
+    print_color "${CYAN}[1/3]${NC} Cấu hình UFW..."
+
+    # Cài UFW nếu chưa có
+    if ! command -v ufw &> /dev/null; then
+        print_color "${YELLOW}  Đang cài đặt UFW...${NC}"
+        sudo apt update -qq
+        sudo apt install -y ufw >/dev/null 2>&1
+    fi
+
+    # Mở các ports cần thiết
+    sudo ufw allow 22/tcp >/dev/null 2>&1    # SSH
+    sudo ufw allow 80/tcp >/dev/null 2>&1    # HTTP
+    sudo ufw allow 443/tcp >/dev/null 2>&1   # HTTPS
+    sudo ufw allow 5000/tcp >/dev/null 2>&1  # Flask
+
+    # Enable UFW
+    echo "y" | sudo ufw enable >/dev/null 2>&1
+    print_color "${GREEN}  ✓ UFW đã mở ports: 22, 80, 443, 5000${NC}"
+
+    # 2. Tắt iptables (Oracle Cloud issue)
+    print_color "${CYAN}[2/3]${NC} Tắt iptables firewall (Oracle Cloud fix)..."
+
+    # Flush all rules
+    sudo iptables -F
+    sudo iptables -X
+    sudo iptables -t nat -F
+    sudo iptables -t nat -X
+    sudo iptables -t mangle -F
+    sudo iptables -t mangle -X
+
+    # Set default policy to ACCEPT
+    sudo iptables -P INPUT ACCEPT
+    sudo iptables -P FORWARD ACCEPT
+    sudo iptables -P OUTPUT ACCEPT
+
+    print_color "${GREEN}  ✓ iptables đã được tắt${NC}"
+
+    # 3. Lưu cấu hình iptables
+    print_color "${CYAN}[3/3]${NC} Lưu cấu hình (persistent)..."
+
+    # Cài iptables-persistent
+    echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
+    echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
+    sudo apt install -y iptables-persistent >/dev/null 2>&1
+
+    # Lưu rules
+    sudo netfilter-persistent save >/dev/null 2>&1
+    print_color "${GREEN}  ✓ Cấu hình đã được lưu${NC}"
+
+    # Hiển thị kết quả
+    echo ""
+    print_color "${GREEN}╔════════════════════════════════════════╗${NC}"
+    print_color "${GREEN}║     🔥 Firewall Configured!            ║${NC}"
+    print_color "${GREEN}╚════════════════════════════════════════╝${NC}"
+    echo ""
+
+    print_color "${CYAN}UFW Status:${NC}"
+    sudo ufw status | grep -E "22|80|443|5000"
+    echo ""
+
+    IP=$(curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+    print_color "${CYAN}Truy cập:${NC} http://$IP"
+    echo ""
+
+    print_color "${YELLOW}Lưu ý:${NC} Nếu dùng Oracle Cloud, đảm bảo đã mở ports trong Security List"
+}
+
 # SSL với Let's Encrypt
 configure_ssl() {
     show_banner
@@ -598,6 +673,9 @@ show_help() {
     printf "  ${GREEN}ssl${NC}\n"
     echo "    Cài đặt SSL certificate với Let's Encrypt"
     echo ""
+    printf "  ${GREEN}firewall${NC}\n"
+    echo "    Mở ports UFW + tắt iptables (fix Oracle Cloud)"
+    echo ""
     printf "  ${GREEN}nginx-reload${NC}, ${GREEN}nginx-check${NC}\n"
     echo "    Reload Nginx hoặc kiểm tra trạng thái"
     echo ""
@@ -611,6 +689,7 @@ show_help() {
     echo "  ./fpl-manager.sh deploy      # Deploy lần đầu"
     echo "  ./fpl-manager.sh nginx       # Cấu hình Nginx"
     echo "  ./fpl-manager.sh ssl         # Cài SSL"
+    echo "  ./fpl-manager.sh firewall    # Mở firewall (Oracle Cloud)"
     echo "  ./fpl-manager.sh restart     # Restart sau khi update code"
     echo ""
 }
@@ -643,6 +722,9 @@ case "$1" in
         ;;
     ssl)
         configure_ssl
+        ;;
+    firewall)
+        configure_firewall
         ;;
     nginx-reload)
         reload_nginx
