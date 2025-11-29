@@ -1881,7 +1881,7 @@ def main():
     ">
     🚀 CHUYỂN NHÀ NÀO **CÁC KHẦY** tại đây:<br>
     <a href='https://rscfpl.xyz/' target='_blank' style='color:#d32f2f; font-size:20px;'>
-    👉 NHẤN VÀO ĐỂ MỞ TRANG PHÂN TÍCH 👈
+    👉 NHẤN VÀO ĐỂ SANG NHÀ MỚI 👈
     </a>
     </div>
     """, unsafe_allow_html=True)
