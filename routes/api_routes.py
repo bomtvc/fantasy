@@ -494,28 +494,27 @@ def export_csv():
 
 @api_bp.route('/cache/clear', methods=['POST'])
 def clear_cache():
-    """Clear application cache with optional selective clearing"""
+    """Clear application cache"""
     try:
-        # Get optional prefix parameter for selective clearing
-        prefix = request.json.get('prefix') if request.json else None
-        
-        if prefix:
-            # Selective clearing by prefix
-            # Note: Flask-Caching doesn't have built-in prefix clearing for FileSystemCache
-            # We'll clear all and document this limitation
-            cache.clear()
-            return jsonify({
-                'success': True,
-                'message': f'Cache cleared (Note: Selective clearing by prefix not available with FileSystemCache, all cache cleared)',
-                'prefix_requested': prefix
-            })
-        else:
-            # Clear all cache
-            cache.clear()
-            return jsonify({
-                'success': True,
-                'message': 'All cache cleared successfully'
-            })
+        # Clear all cache (both Flask-Caching and file system)
+        cache.clear()
+
+        # Also clear cache directory files if exists
+        import os
+        import glob
+        cache_dir = config.CACHE_DIR
+        if os.path.exists(cache_dir):
+            cache_files = glob.glob(os.path.join(cache_dir, '*'))
+            for f in cache_files:
+                try:
+                    os.remove(f)
+                except:
+                    pass
+
+        return jsonify({
+            'success': True,
+            'message': 'All cache cleared successfully'
+        })
     except Exception as e:
         return jsonify({
             'success': False,

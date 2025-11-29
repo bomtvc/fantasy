@@ -209,25 +209,43 @@ function setupSidebarCollapse() {
 }
 
 // === Handle Filters Submit ===
-function handleFiltersSubmit(e) {
+async function handleFiltersSubmit(e) {
     e.preventDefault();
-    
+
     const formData = new FormData(e.target);
     const filters = Object.fromEntries(formData.entries());
-    
+
     // Update app state
     AppState.currentLeagueId = filters.league_id;
     AppState.currentPhase = filters.phase;
-    
+
     // Save to localStorage
     savePreferences();
-    
-    // Trigger page-specific data reload
-    if (typeof reloadPageData === 'function') {
-        reloadPageData(filters);
+
+    try {
+        showLoading('Clearing cache and reloading data...');
+
+        // Clear client-side cache
+        DataCache.clear();
+
+        // Clear server-side cache
+        await fetch('/api/cache/clear', { method: 'POST' });
+
+        // Re-fetch current GW
+        await fetchCurrentGW();
+
+        // Trigger page-specific data reload with force refresh
+        if (typeof reloadPageData === 'function') {
+            reloadPageData(filters);
+        }
+
+        showToast('Cache cleared and data reloaded!', 'success');
+    } catch (error) {
+        console.error('Error applying filters:', error);
+        showToast('Error reloading data', 'error');
+    } finally {
+        hideLoading();
     }
-    
-    showToast('Filters applied successfully', 'success');
 }
 
 // === Handle Clear Cache ===
