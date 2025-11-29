@@ -100,21 +100,21 @@ deploy() {
     chmod 755 cache logs
     print_color "${GREEN}  ✓ Done${NC}"
 
-    # 5. Tạo start script
+    # 5. Tạo start script (không cần dirname, chạy trực tiếp từ WorkingDirectory)
     print_color "${CYAN}[5/7]${NC} Tạo start script..."
-    cat > start.sh << 'EOF'
+    cat > start.sh << 'STARTEOF'
 #!/bin/bash
-cd "$(dirname "$0")"
+# Activate venv và chạy gunicorn
 source venv/bin/activate
-exec gunicorn --workers 2 --bind 0.0.0.0:5000 --timeout 120 --access-logfile logs/access.log --error-logfile logs/error.log "flask_app:create_app()"
-EOF
+exec venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 --timeout 120 --access-logfile logs/access.log --error-logfile logs/error.log "flask_app:create_app()"
+STARTEOF
     chmod +x start.sh
     print_color "${GREEN}  ✓ Done${NC}"
 
     # 6. Cấu hình systemd service
     print_color "${CYAN}[6/7]${NC} Cấu hình systemd service..."
     CURRENT_USER=$(whoami)
-    cat > $SERVICE_NAME.service << EOF
+    cat > $SERVICE_NAME.service << SERVICEEOF
 [Unit]
 Description=FPL League Analyzer Flask Application
 After=network.target
@@ -124,14 +124,14 @@ Type=simple
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=$APP_DIR
-Environment="PATH=$APP_DIR/venv/bin"
-ExecStart=/bin/bash $APP_DIR/start.sh
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:$APP_DIR/venv/bin"
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 --timeout 120 --access-logfile $APP_DIR/logs/access.log --error-logfile $APP_DIR/logs/error.log "flask_app:create_app()"
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SERVICEEOF
     sudo cp $SERVICE_NAME.service /etc/systemd/system/
     print_color "${GREEN}  ✓ Done${NC}"
 
