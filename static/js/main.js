@@ -109,12 +109,34 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeApp() {
     // Load saved preferences from localStorage
     loadPreferences();
-    
+
     // Set active nav link
     setActiveNavLink();
-    
+
     // Initialize tooltips, if any
     initializeTooltips();
+
+    // Fetch and set current GW from API (important for correct data range)
+    fetchCurrentGW();
+}
+
+// === Fetch Current GW from API ===
+async function fetchCurrentGW() {
+    try {
+        const response = await fetch('/api/current-gw');
+        const data = await response.json();
+
+        if (data.success && data.current_gw) {
+            const gwEndInput = document.getElementById('gw-end');
+            if (gwEndInput) {
+                gwEndInput.value = data.current_gw;
+                console.log(`[App] Current GW set to: ${data.current_gw}`);
+            }
+        }
+    } catch (error) {
+        console.warn('[App] Could not fetch current GW:', error);
+        // Keep default value, don't break the app
+    }
 }
 
 // === Event Listeners ===
@@ -209,7 +231,13 @@ function handleFiltersSubmit(e) {
 }
 
 // === Handle Clear Cache ===
-async function handleClearCache() {
+async function handleClearCache(event) {
+    // Prevent form submission if button is inside form
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
     try {
         showLoading('Clearing cache...');
 
@@ -227,7 +255,11 @@ async function handleClearCache() {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Cache cleared successfully. Reloading data...', 'success');
+            showToast('Cache cleared successfully. Refreshing current GW...', 'success');
+
+            // Re-fetch current GW to ensure correct value after cache clear
+            await fetchCurrentGW();
+
             // Reload current page data
             if (typeof reloadPageData === 'function') {
                 const filters = getCurrentFilters();

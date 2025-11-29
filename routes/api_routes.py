@@ -27,6 +27,24 @@ import pandas as pd
 import io
 
 
+@api_bp.route('/current-gw')
+@cache.cached(timeout=config.GW_DATA_CACHE_TTL)  # 15 minutes
+def get_current_gw_endpoint():
+    """Get current gameweek from FPL API"""
+    try:
+        current_gw = get_current_gw()
+        return jsonify({
+            'success': True,
+            'current_gw': current_gw
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'current_gw': 1  # Fallback
+        }), 500
+
+
 @api_bp.route('/league/<int:league_id>')
 @cache.cached(timeout=config.LEAGUE_CACHE_TTL, query_string=True)  # 1 hour - semi-static
 def get_league(league_id):
