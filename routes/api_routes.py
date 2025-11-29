@@ -451,7 +451,9 @@ def get_awards_leaderboard():
         return jsonify({
             'success': True,
             'data': leaderboard_df.to_dict('records'),
-            'columns': leaderboard_df.columns.tolist()
+            'columns': leaderboard_df.columns.tolist(),
+            'current_gw': current_gw,
+            'gw_end_used': gw_end
         })
     except Exception as e:
         return jsonify({
