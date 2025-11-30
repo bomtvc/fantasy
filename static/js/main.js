@@ -99,7 +99,7 @@ async function cachedFetch(dataType, url, forceRefresh = false) {
 }
 
 // === DOM Ready ===
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     initializeApp();
     setupEventListeners();
     setupMobileMenu();
@@ -146,13 +146,13 @@ function setupEventListeners() {
     if (filtersForm) {
         filtersForm.addEventListener('submit', handleFiltersSubmit);
     }
-    
+
     // Clear cache button
     const clearCacheBtn = document.getElementById('clear-cache-btn');
     if (clearCacheBtn) {
         clearCacheBtn.addEventListener('click', handleClearCache);
     }
-    
+
     // Save filter values to localStorage on change
     const filterInputs = document.querySelectorAll('#filters-form input, #filters-form select');
     filterInputs.forEach(input => {
@@ -282,7 +282,7 @@ async function handleClearCache(event) {
     }
 
     try {
-        showLoading('Clearing cache...');
+        showLoading('Refreshing data...');
 
         // Clear client-side cache
         DataCache.clear();
@@ -298,7 +298,7 @@ async function handleClearCache(event) {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Cache cleared successfully. Refreshing current GW...', 'success');
+            showToast('Data refreshed successfully!', 'success');
 
             // Re-fetch current GW to ensure correct value after cache clear
             await fetchCurrentGW();
@@ -324,11 +324,11 @@ function showLoading(message = 'Loading...') {
     AppState.isLoading = true;
     const overlay = document.getElementById('loading-overlay');
     const loadingText = overlay.querySelector('.loading-text');
-    
+
     if (loadingText) {
         loadingText.textContent = message;
     }
-    
+
     overlay.classList.remove('hidden');
 }
 
@@ -341,13 +341,13 @@ function hideLoading() {
 function updateProgress(current, total) {
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
-    
+
     const percentage = Math.round((current / total) * 100);
-    
+
     if (progressFill) {
         progressFill.style.width = `${percentage}%`;
     }
-    
+
     if (progressText) {
         progressText.textContent = `${percentage}%`;
     }
@@ -356,13 +356,13 @@ function updateProgress(current, total) {
 // === Toast Notifications ===
 function showToast(message, type = 'info', duration = 3000) {
     const container = document.getElementById('toast-container');
-    
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type} animate-slide-in`;
     toast.textContent = message;
-    
+
     container.appendChild(toast);
-    
+
     // Auto-remove after duration
     setTimeout(() => {
         toast.style.animation = 'slideOut var(--transition-base) ease-out';
@@ -382,17 +382,17 @@ function savePreferences() {
         month_mapping: document.getElementById('month-mapping')?.value,
         max_entries: document.getElementById('max-entries')?.value,
     };
-    
+
     localStorage.setItem('fpl_preferences', JSON.stringify(preferences));
 }
 
 function loadPreferences() {
     const saved = localStorage.getItem('fpl_preferences');
-    
+
     if (saved) {
         try {
             const preferences = JSON.parse(saved);
-            
+
             // Apply saved values
             Object.keys(preferences).forEach(key => {
                 const element = document.getElementById(key.replace('_', '-'));
@@ -400,7 +400,7 @@ function loadPreferences() {
                     element.value = preferences[key];
                 }
             });
-            
+
             // Update app state
             AppState.currentLeagueId = preferences.league_id;
             AppState.currentPhase = preferences.phase;
@@ -414,7 +414,7 @@ function loadPreferences() {
 function setActiveNavLink() {
     const currentPath = window.location.pathname;
     const navLinks = document.querySelectorAll('.nav-link');
-    
+
     navLinks.forEach(link => {
         if (link.getAttribute('href') === currentPath) {
             link.classList.add('active');
@@ -439,7 +439,7 @@ async function exportToCSV(data, filename = 'export.csv') {
             },
             body: JSON.stringify({ data, filename })
         });
-        
+
         if (response.ok) {
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -450,7 +450,7 @@ async function exportToCSV(data, filename = 'export.csv') {
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
-            
+
             showToast('Export successful', 'success');
         } else {
             throw new Error('Export failed');
@@ -484,10 +484,10 @@ function formatDate(dateString) {
 }
 
 // === Error Handling ===
-window.addEventListener('error', function(e) {
+window.addEventListener('error', function (e) {
     console.error('Global error:', e.error);
 });
 
-window.addEventListener('unhandledrejection', function(e) {
+window.addEventListener('unhandledrejection', function (e) {
     console.error('Unhandled promise rejection:', e.reason);
 });
