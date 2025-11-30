@@ -118,14 +118,13 @@ def get_bootstrap_static() -> pd.DataFrame:
 
 def get_current_gw() -> int:
     """
-    Get current gameweek (latest in-progress or finished GW) from FPL API
-    
+    Get current gameweek from FPL API
+
     Priority:
-    1. Find GW with started fixtures (in progress)
+    1. Find GW with is_current=True (FPL's official current GW)
     2. Find latest finished GW
-    3. Find current GW by is_current flag
-    4. Find next GW and subtract 1
-    
+    3. Find next GW and subtract 1
+
     Returns:
         Current gameweek number
     """
@@ -135,54 +134,26 @@ def get_current_gw() -> int:
     except:
         # If bootstrap fails, return default
         return 1
-    
-    # Priority 1: Find GW with started fixtures (most accurate for in-progress GW)
-    # Check recent GWs in reverse order (most recent first)
-    # Only check last 5 GWs to avoid too many API calls
-    recent_events = sorted(events, key=lambda x: x['id'], reverse=True)[:5]
-    
-    for event in recent_events:
-        gw_id = event['id']
-        try:
-            # Check if any fixture in this GW has started
-            fixtures_url = f"https://fantasy.premierleague.com/api/fixtures/?event={gw_id}"
-            fixtures_data = fetch_json(fixtures_url)
-            
-            if not fixtures_data:
-                continue
-            
-            # Count started and finished fixtures
-            started_count = sum(1 for f in fixtures_data if f.get('started', False))
-            finished_count = sum(1 for f in fixtures_data if f.get('finished', False))
-            total_count = len(fixtures_data)
-            
-            # If any fixture has started AND not all are finished, this is current GW
-            if started_count > 0 and finished_count < total_count:
-                return gw_id
-                
-        except:
-            # Continue to next GW if fixtures check fails
-            continue
-    
-    # Priority 2: Find the latest finished gameweek (fallback)
+
+    # Priority 1: Find GW with is_current=True (most reliable)
+    for event in events:
+        if event.get('is_current', False):
+            return event['id']
+
+    # Priority 2: Find the latest finished gameweek
     finished_gw = 0
     for event in events:
         if event.get('finished', False):
             finished_gw = max(finished_gw, event['id'])
-    
+
     if finished_gw > 0:
         return finished_gw
-    
-    # Priority 3: If no finished GW, find current GW by flag
-    for event in events:
-        if event.get('is_current', False):
-            return event['id']
-    
-    # Priority 4: If no current GW, find next GW
+
+    # Priority 3: Find next GW and subtract 1
     for event in events:
         if event.get('is_next', False):
             return max(1, event['id'] - 1)
-    
+
     return 1  # Ultimate fallback
 
 
