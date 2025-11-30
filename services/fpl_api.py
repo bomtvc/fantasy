@@ -118,34 +118,56 @@ def get_bootstrap_static() -> pd.DataFrame:
 
 def get_current_gw() -> int:
     """
-    Get current gameweek (latest finished or in-progress GW) from FPL API
-
+    Get current gameweek (latest in-progress or finished GW) from FPL API
+    
+    Priority:
+    1. Find GW with started fixtures (in progress)
+    2. Find latest finished GW
+    3. Find current GW by is_current flag
+    4. Find next GW and subtract 1
+    
     Returns:
         Current gameweek number
     """
     try:
         data = get_bootstrap_static_raw()
         events = data.get('events', [])
-
-        # Find the latest finished gameweek
+        
+        # Priority 1: Find GW with started fixtures (most accurate for in-progress GW)
+        # Check recent GWs in reverse order (most recent first)
+        for event in sorted(events, key=lambda x: x['id'], reverse=True):
+            gw_id = event['id']
+            try:
+                # Check if any fixture in this GW has started
+                fixtures_url = f"https://fantasy.premierleague.com/api/fixtures/?event={gw_id}"
+                fixtures_data = fetch_json(fixtures_url)
+                
+                # If any fixture has started, this is the current GW
+                if any(fixture.get('started', False) for fixture in fixtures_data):
+                    return gw_id
+            except:
+                # Continue to next GW if fixtures check fails
+                continue
+        
+        # Priority 2: Find the latest finished gameweek (fallback)
         finished_gw = 0
         for event in events:
             if event.get('finished', False):
                 finished_gw = max(finished_gw, event['id'])
-
+        
         if finished_gw > 0:
             return finished_gw
-
-        # If no finished GW, find current GW
+        
+        # Priority 3: If no finished GW, find current GW by flag
         for event in events:
             if event.get('is_current', False):
                 return event['id']
-
-        # If no current GW, find next GW
+        
+        # Priority 4: If no current GW, find next GW
         for event in events:
             if event.get('is_next', False):
                 return max(1, event['id'] - 1)
-
+        
         return 1  # Ultimate fallback
     except:
         return 1  # Default fallback
