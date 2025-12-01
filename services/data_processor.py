@@ -584,13 +584,14 @@ def build_chip_history_table(entries_df: pd.DataFrame, gw_range: List[int],
     return pd.DataFrame(results)
 
 
-def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[int, int]) -> pd.DataFrame:
+def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[int, int], current_gw: int = 38) -> pd.DataFrame:
     """
     Calculate awards statistics for all managers
 
     Args:
         gw_points_df: GW points DataFrame with columns [Team_ID, Manager, Team, GW, Points]
         month_mapping: Dict mapping GW number to month number
+        current_gw: Current gameweek (to determine completed months)
 
     Returns:
         DataFrame with columns [Team_ID, Manager, Team, Weekly_Wins, Monthly_Wins, Total_Prize_Money]
@@ -617,11 +618,11 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
     awards_df = pd.DataFrame(awards_data)
 
     # Prize money constants
-    WEEKLY_PRIZE = 300000  # $300,000 for weekly winner
-    MONTHLY_PRIZE = 500000  # $500,000 for monthly winner
+    WEEKLY_PRIZE = 300000  # 300,000 VND for weekly winner
+    MONTHLY_PRIZE = 500000  # 500,000 VND for monthly winner
 
-    # Calculate weekly wins (1st place in each GW)
-    available_gws = sorted(gw_points_df['GW'].unique())
+    # Calculate weekly wins (1st place in each GW) - only for GWs that have been played
+    available_gws = sorted([gw for gw in gw_points_df['GW'].unique() if gw <= current_gw])
 
     for gw in available_gws:
         gw_data = gw_points_df[gw_points_df['GW'] == gw]
@@ -636,10 +637,23 @@ def calculate_awards_statistics(gw_points_df: pd.DataFrame, month_mapping: Dict[
                 awards_df.loc[awards_df['Team_ID'] == team_id, 'Weekly_Wins'] += 1
                 awards_df.loc[awards_df['Team_ID'] == team_id, 'Weekly_Prize_Money'] += prize_per_winner
 
-    # Calculate monthly wins (1st place in each month based on total points)
+    # Build reverse mapping: month -> [gw_start, gw_end]
+    month_ranges = {}
+    for gw, month in month_mapping.items():
+        if month not in month_ranges:
+            month_ranges[month] = [gw, gw]
+        else:
+            month_ranges[month][0] = min(month_ranges[month][0], gw)
+            month_ranges[month][1] = max(month_ranges[month][1], gw)
+
+    # Calculate monthly wins - only for COMPLETED months
     available_months = sorted(set(month_mapping.values()))
 
     for month in available_months:
+        # Only count if month is complete (current_gw >= last GW of month)
+        if month not in month_ranges or current_gw < month_ranges[month][1]:
+            continue  # Skip incomplete months
+
         # Get GWs for this month
         month_gws = [gw for gw, m in month_mapping.items() if m == month]
         month_data = gw_points_df[gw_points_df['GW'].isin(month_gws)]

@@ -117,7 +117,8 @@ def get_league_entries_api(league_id):
             gw_range = list(range(1, current_gw + 1))
             gw_points_df = build_gw_points_table(entries_df, gw_range, max_entries=None)
             month_mapping = parse_month_mapping(month_mapping_str)
-            awards_df = calculate_awards_statistics(gw_points_df, month_mapping)
+            # Pass current_gw to only count completed months
+            awards_df = calculate_awards_statistics(gw_points_df, month_mapping, current_gw)
 
             # Merge awards with entries
             entries_df = entries_df.merge(
