@@ -130,7 +130,7 @@
 /* Title line for weekly cert (MANAGER OF THE WEEK X) */
 .certificate .cert-title {
     position: absolute;
-    top: 38%;
+    top: 33%;
     left: 50%;
     transform: translateX(-50%);
     font-size: 1.4rem;
@@ -152,7 +152,7 @@
 /* Manager name - positioned below title */
 .certificate .cert-name {
     position: absolute;
-    top: 48%;
+    top: 42%;
     left: 50%;
     transform: translateX(-50%);
     font-size: 2.5rem;
@@ -161,10 +161,20 @@
     text-shadow: 2px 2px 8px rgba(0,0,0,0.9), 0 0 30px rgba(255,255,255,0.4);
     text-align: center;
     margin: 0;
-    padding: 0 20px;
-    white-space: nowrap;
+    padding: 0 30px;
+    width: 90%;
+    max-width: 650px;
+    white-space: normal;
+    word-wrap: break-word;
+    line-height: 1.3;
     font-family: 'Georgia', serif;
     letter-spacing: 2px;
+}
+
+/* Smaller font for long names (tied winners) */
+.certificate .cert-name.tied-winners {
+    font-size: 2rem;
+    letter-spacing: 1px;
 }
 
 .cert-download-btn {
@@ -326,6 +336,19 @@
     white-space: nowrap;
 }
 
+/* Tied players - allow wrapping for multiple names */
+.podium-name.tied-names {
+    max-width: 150px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+    font-size: 0.8rem;
+}
+
+.podium-item.tied {
+    min-width: 120px;
+}
+
 .podium-points {
     font-size: 0.8rem;
     color: var(--color-text-secondary);
@@ -338,10 +361,15 @@
     margin-top: var(--space-2);
 }
 
-/* Podium order: 2nd (left), 1st (center), 3rd (right) */
-.podium-item:nth-child(1) .podium-bar { height: 70px; background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%); } /* 2nd - Silver */
-.podium-item:nth-child(2) .podium-bar { height: 100px; background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%); } /* 1st - Gold */
-.podium-item:nth-child(3) .podium-bar { height: 50px; background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%); } /* 3rd - Bronze */
+/* Podium colors based on actual rank (not position) */
+.podium-item.rank-1 .podium-bar { height: 100px; background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%); } /* 1st - Gold */
+.podium-item.rank-2 .podium-bar { height: 70px; background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%); } /* 2nd - Silver */
+.podium-item.rank-3 .podium-bar { height: 50px; background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%); } /* 3rd - Bronze */
+
+/* Podium name colors based on rank */
+.podium-item.rank-1 .podium-name { color: #ffd700; } /* Gold */
+.podium-item.rank-2 .podium-name { color: #c0c0c0; } /* Silver */
+.podium-item.rank-3 .podium-name { color: #cd7f32; } /* Bronze */
 
 /* Ranking table specific styles */
 .ranking-content table {
@@ -583,37 +611,48 @@
 
         if (!data || data.length === 0) return;
 
-        // Get top 3
-        const top3 = data.filter(row => row.Rank <= 3).slice(0, 3);
+        // Get all players with Rank <= 3 (handle ties - multiple players same rank)
+        const top3Players = data.filter(row => row.Rank <= 3);
 
-        if (top3.length === 0) return;
+        if (top3Players.length === 0) return;
 
         const title = type === 'weekly' ? `🎖️ Top 3 GW ${period}` : `🏅 Top 3 Month ${period}`;
 
+        // Group players by rank
+        const rankGroups = {
+            1: top3Players.filter(r => r.Rank === 1),
+            2: top3Players.filter(r => r.Rank === 2),
+            3: top3Players.filter(r => r.Rank === 3)
+        };
+
         // Reorder for podium display: 2nd, 1st, 3rd
         const podiumOrder = [];
-        const first = top3.find(r => r.Rank === 1);
-        const second = top3.find(r => r.Rank === 2);
-        const third = top3.find(r => r.Rank === 3);
-
-        if (second) podiumOrder.push(second);
-        if (first) podiumOrder.push(first);
-        if (third) podiumOrder.push(third);
+        if (rankGroups[2].length > 0) podiumOrder.push({ rank: 2, players: rankGroups[2] });
+        if (rankGroups[1].length > 0) podiumOrder.push({ rank: 1, players: rankGroups[1] });
+        if (rankGroups[3].length > 0) podiumOrder.push({ rank: 3, players: rankGroups[3] });
 
         const cardHtml = `
             <div class="top3-card" id="${cardId}">
                 <h4>${title}</h4>
                 <div class="podium">
-                    ${podiumOrder.map((player, idx) => {
-                        // Only first place (Rank 1) is clickable for certificate
-                        const isFirst = player.Rank === 1;
-                        const clickAttr = isFirst ? `onclick="showCertificate('${type}', '${player.Manager}', ${player.Points}, ${period})"` : '';
+                    ${podiumOrder.map(group => {
+                        const isFirst = group.rank === 1;
+                        // Combine names if multiple players tied
+                        const names = group.players.map(p => p.Manager);
+                        const displayName = names.join(' & ');
+                        const points = group.players[0].Points;
+                        const medal = group.players[0].Medal;
+
+                        // For certificate, use first player's name if tied
+                        const clickAttr = isFirst ? `onclick="showCertificate('${type}', '${displayName.replace(/'/g, "\\'")}', ${points}, ${period})"` : '';
                         const clickClass = isFirst ? 'clickable' : '';
+                        const titleAttr = isFirst ? (names.length > 1 ? 'Click to view certificate (tied winners)' : 'Click to view certificate') : '';
+
                         return `
-                        <div class="podium-item">
-                            <span class="podium-medal ${clickClass}" ${clickAttr} title="${isFirst ? 'Click to view certificate' : ''}">${player.Medal}</span>
-                            <span class="podium-name" title="${player.Manager}">${player.Manager}</span>
-                            <span class="podium-points">${player.Points} pts</span>
+                        <div class="podium-item rank-${group.rank} ${names.length > 1 ? 'tied' : ''}">
+                            <span class="podium-medal ${clickClass}" ${clickAttr} title="${titleAttr}">${medal}</span>
+                            <span class="podium-name ${names.length > 1 ? 'tied-names' : ''}" title="${displayName}">${displayName}</span>
+                            <span class="podium-points">${points} pts</span>
                             <div class="podium-bar"></div>
                         </div>
                     `}).join('')}
@@ -651,6 +690,13 @@
 
         // Display manager name
         certName.textContent = managerName;
+
+        // Add class for tied winners (multiple names)
+        if (managerName.includes(' & ')) {
+            certName.classList.add('tied-winners');
+        } else {
+            certName.classList.remove('tied-winners');
+        }
 
         // Store data for download
         modal.dataset.type = type;
