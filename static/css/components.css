@@ -208,8 +208,8 @@ tbody tr:hover {
     background-color: rgba(102, 126, 234, 0.05);
 }
 
-/* Rank styling */
-.rank-1 {
+/* Rank styling - only for table cells, not podium items */
+td.rank-1, span.rank-1:not(.podium-medal):not(.podium-name):not(.podium-points) {
     background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -217,7 +217,7 @@ tbody tr:hover {
     font-weight: var(--font-weight-bold);
 }
 
-.rank-2 {
+td.rank-2, span.rank-2:not(.podium-medal):not(.podium-name):not(.podium-points) {
     background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -225,7 +225,7 @@ tbody tr:hover {
     font-weight: var(--font-weight-bold);
 }
 
-.rank-3 {
+td.rank-3, span.rank-3:not(.podium-medal):not(.podium-name):not(.podium-points) {
     background: linear-gradient(135deg, #cd7f32 0%, #e8a87c 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;

@@ -366,15 +366,14 @@
 .podium-item.rank-2 .podium-bar { height: 70px; background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%); } /* 2nd - Silver */
 .podium-item.rank-3 .podium-bar { height: 50px; background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%); } /* 3rd - Bronze */
 
-/* Podium name colors - use white for better contrast */
-.podium-item .podium-name {
-    color: #ffffff !important;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-}
-
-/* Podium points colors - use white for better contrast */
+/* Podium name and points colors - override background-clip text effect from components.css */
+.podium-item .podium-name,
 .podium-item .podium-points {
     color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background: none !important;
+    background-clip: unset !important;
+    -webkit-background-clip: unset !important;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
 }
 
